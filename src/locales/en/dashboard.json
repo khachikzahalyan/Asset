@@ -1,0 +1,17 @@
+{
+  "title": "Dashboard",
+  "subtitle": "Overview of assets and recent activity",
+  "totalAssets": "Total assets",
+  "inStock": "In stock",
+  "issued": "Issued",
+  "underRepair": "Under repair",
+  "writtenOff": "Written off",
+  "activeEmployees": "Active employees",
+  "branches": "Branches",
+  "recentActivity": "Recent activity",
+  "comingSoon": "Metrics will appear once you add your first data.",
+  "quickActions": "Quick actions",
+  "addAsset": "Add asset",
+  "issueAsset": "Issue asset",
+  "addEmployee": "Add employee"
+}

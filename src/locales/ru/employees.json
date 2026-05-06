@@ -1,0 +1,14 @@
+{
+  "title": "Сотрудники",
+  "addEmployee": "Добавить сотрудника",
+  "firstName": "Имя",
+  "lastName": "Фамилия",
+  "middleName": "Отчество",
+  "email": "E-mail",
+  "phone": "Телефон",
+  "position": "Должность",
+  "branch": "Филиал",
+  "department": "Отдел",
+  "active": "Активен",
+  "terminated": "Уволен"
+}

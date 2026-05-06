@@ -1,0 +1,139 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- Role helper functions ----
+    // Single source of truth for role-based authorization.
+    // Each helper reads users/{uid}.role; cache via let in rules that need it twice.
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function getRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && getRole() == 'super_admin';
+    }
+
+    function isAssetAdmin() {
+      return isSignedIn() && getRole() == 'asset_admin';
+    }
+
+    function isTechAdmin() {
+      return isSignedIn() && getRole() == 'tech_admin';
+    }
+
+    function isAdmin() {
+      return isSuperAdmin() || isAssetAdmin() || isTechAdmin();
+    }
+
+    // ---- Default deny ----
+    // Specific collection rules land in the per-feature steps. Until then, no client write succeeds.
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ---- audit_logs ----
+    // Append-only. Update and delete forbidden for everyone, including super_admin.
+    // Detailed contract in docs/features/audit-trail.md.
+    match /audit_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin()
+                    && request.resource.data.actorUid == request.auth.uid
+                    && request.resource.data.at == request.time;
+      allow update, delete: if false;
+    }
+
+    // ---- users ----
+    // Self-read; super_admin manages role/branchId/departmentId/displayName.
+    //
+    // Bootstrap path: a signed-in user whose email is in the SEED_SUPER_ADMINS list below
+    // may CREATE their own users/{uid} doc with role='super_admin'. This removes the
+    // chicken-and-egg problem of needing a super_admin to grant the first super_admin
+    // before any super_admin exists. Once the doc exists, normal rules apply.
+    //
+    // The whitelist is duplicated in scripts/seed.js (SEED_SUPER_ADMINS). Keep them in sync.
+    function isSeedSuperAdminEmail() {
+      return request.auth != null
+             && request.auth.token.email_verified == true
+             && request.auth.token.email in ['zahalyanxcho@gmail.com'];
+    }
+
+    match /users/{uid} {
+      allow read: if (request.auth != null && request.auth.uid == uid) || isSuperAdmin();
+
+      allow create: if request.auth != null
+                    && request.auth.uid == uid
+                    && isSeedSuperAdminEmail()
+                    && request.resource.data.role == 'super_admin'
+                    && request.resource.data.email == request.auth.token.email;
+
+      allow update: if isSuperAdmin()
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                       .hasOnly(['role', 'branchId', 'departmentId', 'displayName', 'preferredLocale', 'employeeId']);
+
+      allow delete: if false;
+    }
+
+    // ---- settings/auth ----
+    // Read by any admin; write by super_admin only.
+    match /settings/auth {
+      allow read: if isAdmin();
+      allow write: if isSuperAdmin();
+    }
+
+    // ---- branches ----
+    // Read by any admin; create/update by super_admin only; soft-close only (no delete).
+    // Detailed contract in docs/features/branches.md.
+    function isValidBranchName(name) {
+      return name is map
+             && name.keys().hasOnly(['ru', 'en', 'hy'])
+             && name.ru is string
+             && name.en is string
+             && name.hy is string;
+    }
+
+    function isValidBranchType(type) {
+      return type in ['branch', 'warehouse'];
+    }
+
+    match /branches/{branchId} {
+      allow read: if isAdmin();
+
+      allow create: if isSuperAdmin()
+                    && isValidBranchName(request.resource.data.name)
+                    && isValidBranchType(request.resource.data.type)
+                    && request.resource.data.isActive is bool
+                    && request.resource.data.address is string
+                    && (
+                         request.resource.data.responsibleEmployeeId == null
+                         || request.resource.data.responsibleEmployeeId is string
+                       )
+                    && request.resource.data.createdBy == request.auth.uid
+                    && request.resource.data.updatedBy == request.auth.uid
+                    && request.resource.data.createdAt == request.time
+                    && request.resource.data.updatedAt == request.time;
+
+      allow update: if isSuperAdmin()
+                    && isValidBranchName(request.resource.data.name)
+                    && isValidBranchType(request.resource.data.type)
+                    && request.resource.data.isActive is bool
+                    && request.resource.data.address is string
+                    && (
+                         request.resource.data.responsibleEmployeeId == null
+                         || request.resource.data.responsibleEmployeeId is string
+                       )
+                    && request.resource.data.createdBy == resource.data.createdBy
+                    && request.resource.data.updatedBy == request.auth.uid
+                    && request.resource.data.updatedAt == request.time;
+
+      allow delete: if false;
+    }
+
+  }
+}

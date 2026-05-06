@@ -1,0 +1,17 @@
+{
+  "title": "Активы",
+  "addAsset": "Добавить актив",
+  "inventoryCode": "Инвентарный номер",
+  "name": "Наименование",
+  "category": "Категория",
+  "status": "Статус",
+  "branch": "Филиал",
+  "assignee": "Ответственный",
+  "brand": "Бренд",
+  "model": "Модель",
+  "serialNumber": "Серийный номер",
+  "imei": "IMEI",
+  "purchaseDate": "Дата покупки",
+  "warrantyUntil": "Гарантия до",
+  "noResults": "Ничего не найдено"
+}

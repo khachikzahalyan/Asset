@@ -1,0 +1,8 @@
+{
+  "title": "Настройки",
+  "auth": "Авторизация",
+  "allowedDomains": "Разрешённые домены",
+  "seedSuperAdmins": "Стартовые суперадмины",
+  "general": "Общие",
+  "notifications": "Уведомления"
+}

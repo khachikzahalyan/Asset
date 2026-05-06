@@ -1,0 +1,14 @@
+{
+  "title": "Աշխատակիցներ",
+  "addEmployee": "Ավելացնել աշխատակից",
+  "firstName": "Անուն",
+  "lastName": "Ազգանուն",
+  "middleName": "Հայրանուն",
+  "email": "Էլ. փոստ",
+  "phone": "Հեռախոս",
+  "position": "Պաշտոն",
+  "branch": "Մասնաճյուղ",
+  "department": "Բաժին",
+  "active": "Ակտիվ",
+  "terminated": "Աշխատանքից ազատված"
+}

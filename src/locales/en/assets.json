@@ -1,0 +1,17 @@
+{
+  "title": "Assets",
+  "addAsset": "Add asset",
+  "inventoryCode": "Inventory code",
+  "name": "Name",
+  "category": "Category",
+  "status": "Status",
+  "branch": "Branch",
+  "assignee": "Assignee",
+  "brand": "Brand",
+  "model": "Model",
+  "serialNumber": "Serial number",
+  "imei": "IMEI",
+  "purchaseDate": "Purchase date",
+  "warrantyUntil": "Warranty until",
+  "noResults": "No results"
+}

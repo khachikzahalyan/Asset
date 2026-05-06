@@ -1,0 +1,13 @@
+{
+  "title": "Statuses",
+  "addStatus": "Add status",
+  "name": "Name",
+  "color": "Color",
+  "isFinal": "Final",
+  "isAssignable": "Assignable",
+  "in_stock": "In stock",
+  "issued": "Issued",
+  "under_repair": "Under repair",
+  "written_off": "Written off",
+  "lost": "Lost"
+}

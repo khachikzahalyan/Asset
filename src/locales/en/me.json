@@ -1,0 +1,7 @@
+{
+  "title": "My assets",
+  "greeting": "Hello, {{name}}",
+  "noAssignments": "You currently hold no assets.",
+  "viewAct": "View act",
+  "issuedOn": "Issued on {{date}}"
+}

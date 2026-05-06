@@ -1,0 +1,17 @@
+{
+  "title": "Ակտիվներ",
+  "addAsset": "Ավելացնել ակտիվ",
+  "inventoryCode": "Գույքագրման համար",
+  "name": "Անվանում",
+  "category": "Կատեգորիա",
+  "status": "Կարգավիճակ",
+  "branch": "Մասնաճյուղ",
+  "assignee": "Պատասխանատու",
+  "brand": "Բրենդ",
+  "model": "Մոդել",
+  "serialNumber": "Սերիական համար",
+  "imei": "IMEI",
+  "purchaseDate": "Գնման ամսաթիվ",
+  "warrantyUntil": "Երաշխիք մինչև",
+  "noResults": "Արդյունք չկա"
+}

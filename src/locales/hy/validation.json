@@ -1,0 +1,8 @@
+{
+  "required": "Պարտադիր է",
+  "invalidEmail": "Սխալ էլ. փոստ",
+  "asciiOnly": "Միայն լատինական տառեր և թվեր",
+  "minLength": "Առնվազն {{min}} նիշ",
+  "maxLength": "Առավելագույնը {{max}} նիշ",
+  "atLeastOneLocale": "Լրացրեք առնվազն մեկ լեզու"
+}

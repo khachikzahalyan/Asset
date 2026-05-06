@@ -1,0 +1,8 @@
+{
+  "title": "Settings",
+  "auth": "Authentication",
+  "allowedDomains": "Allowed domains",
+  "seedSuperAdmins": "Seed super admins",
+  "general": "General",
+  "notifications": "Notifications"
+}

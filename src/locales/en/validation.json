@@ -1,0 +1,8 @@
+{
+  "required": "Required",
+  "invalidEmail": "Invalid email",
+  "asciiOnly": "Latin letters and digits only",
+  "minLength": "At least {{min}} characters",
+  "maxLength": "At most {{max}} characters",
+  "atLeastOneLocale": "Fill in at least one language"
+}

@@ -1,0 +1,55 @@
+# dependencies
+node_modules
+.pnp
+.pnp.js
+
+# build
+dist
+dist-ssr
+build
+*.local
+
+# editor
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# env
+.env
+.env.local
+.env.*.local
+
+# firebase
+.firebase
+.firebaserc.local
+*.log
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+
+# secrets — service account keys
+serviceAccountKey.json
+serviceAccountKey.*.json
+.secrets/
+
+# auth exports (contain password hashes — never commit)
+auth_export.json
+auth_export.*.json
+
+# coverage
+coverage

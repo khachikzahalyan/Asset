@@ -1,0 +1,14 @@
+{
+  "title": "Employees",
+  "addEmployee": "Add employee",
+  "firstName": "First name",
+  "lastName": "Last name",
+  "middleName": "Middle name",
+  "email": "Email",
+  "phone": "Phone",
+  "position": "Position",
+  "branch": "Branch",
+  "department": "Department",
+  "active": "Active",
+  "terminated": "Terminated"
+}
