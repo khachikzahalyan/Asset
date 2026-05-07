@@ -30,5 +30,22 @@
   "openMenu": "Открыть меню",
   "closeMenu": "Закрыть меню",
   "navUsers": "Пользователи",
-  "navSidebar": "Боковая навигация"
+  "navSidebar": "Боковая навигация",
+  "audit": {
+    "historyTitle": "История изменений",
+    "historyEmpty": "Записей пока нет.",
+    "at": "Дата",
+    "action": "Действие",
+    "actor": "Кто",
+    "changedFields": "Изменения",
+    "actionCreate": "Создан",
+    "actionUpdate": "Обновлён",
+    "actionDeactivate": "Деактивирован",
+    "actionActivate": "Активирован",
+    "actionReactivate": "Восстановлен",
+    "actionAssign": "Закреплён",
+    "actionUnassign": "Откреплён",
+    "actionTransfer": "Передан",
+    "actionStatusChange": "Смена статуса"
+  }
 }

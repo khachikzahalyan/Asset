@@ -107,6 +107,11 @@ describe('BranchListPage', () => {
     // Status badges from the i18n keys
     expect(screen.getByText(i18n.t('branches:active'))).toBeInTheDocument();
     expect(screen.getByText(i18n.t('branches:closed'))).toBeInTheDocument();
+
+    // The Type column was removed — the list should not render a Type header.
+    expect(
+      screen.queryByRole('columnheader', { name: i18n.t('branches:type') })
+    ).not.toBeInTheDocument();
   });
 
   it('shows a loading spinner while branches are being fetched', () => {

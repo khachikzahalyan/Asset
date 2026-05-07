@@ -10,11 +10,23 @@ export const ROUTES = Object.freeze({
   FORBIDDEN: '/403',
   BRANCHES: '/branches',
   BRANCH_DETAIL: '/branches/:id',
+  EMPLOYEES: '/employees',
+  EMPLOYEE_DETAIL: '/employees/:id',
+  ASSETS: '/assets',
+  ASSET_DETAIL: '/assets/:assetId',
   USERS: '/users',
 });
 
 export function branchDetailPath(id) {
   return `/branches/${id}`;
+}
+
+export function employeeDetailPath(id) {
+  return `/employees/${id}`;
+}
+
+export function assetDetailPath(id) {
+  return `/assets/${id}`;
 }
 
 export const ROUTE_TABLE = [
@@ -33,6 +45,22 @@ export const ROUTE_TABLE = [
   {
     path: ROUTES.BRANCH_DETAIL,
     allowedRoles: [ROLES.SUPER_ADMIN, ROLES.ASSET_ADMIN],
+  },
+  {
+    path: ROUTES.EMPLOYEES,
+    allowedRoles: [ROLES.SUPER_ADMIN, ROLES.ASSET_ADMIN, ROLES.TECH_ADMIN],
+  },
+  {
+    path: ROUTES.EMPLOYEE_DETAIL,
+    allowedRoles: [ROLES.SUPER_ADMIN, ROLES.ASSET_ADMIN, ROLES.TECH_ADMIN],
+  },
+  {
+    path: ROUTES.ASSETS,
+    allowedRoles: [ROLES.SUPER_ADMIN, ROLES.ASSET_ADMIN, ROLES.TECH_ADMIN],
+  },
+  {
+    path: ROUTES.ASSET_DETAIL,
+    allowedRoles: [ROLES.SUPER_ADMIN, ROLES.ASSET_ADMIN, ROLES.TECH_ADMIN],
   },
   { path: ROUTES.ME, allowedRoles: [ROLES.EMPLOYEE] },
   { path: ROUTES.USERS, allowedRoles: [ROLES.SUPER_ADMIN] },

@@ -3,5 +3,13 @@
   "addCategory": "Ավելացնել կատեգորիա",
   "name": "Անվանում",
   "description": "Նկարագրություն",
-  "inventoryCodePrefix": "Գույքագրման համարի նախածանց"
+  "inventoryCodePrefix": "Գույքագրման համարի նախածանց",
+  "requiresMultilang": "Բազմալեզու անվանում",
+  "device": "Սարք",
+  "furniture": "Կահույք",
+  "license": "Լիցենզիա",
+  "errorRequired": "Պարտադիր դաշտ",
+  "errorNameAllLocales": "Լրացրեք անվանումը բոլոր լեզուներով",
+  "errorPrefixFormat": "Նախածանցը պետք է պարունակի միայն մեծատառ լատինական տառեր և թվեր",
+  "errorPrefixInUse": "Այս նախածանցն արդեն օգտագործվում է մեկ այլ կատեգորիայի կողմից"
 }

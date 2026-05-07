@@ -38,6 +38,12 @@ vi.mock('firebase/firestore', () => ({
   onSnapshot: vi.fn(() => () => {}),
   serverTimestamp: vi.fn(() => 'SERVER_TS'),
   getFirestore: vi.fn(() => ({})),
+  // Default: every call resolves to count=0. Specific tests that care about
+  // the value re-mock `firebase/firestore` locally inside the test file.
+  getCountFromServer: vi.fn(async () => ({ data: () => ({ count: 0 }) })),
+  query: vi.fn((coll, ...mods) => ({ __query: coll, mods })),
+  where: vi.fn((field, op, value) => ({ __where: [field, op, value] })),
+  orderBy: vi.fn((field, dir) => ({ __order: [field, dir] })),
 }));
 
 vi.mock('firebase/storage', () => ({

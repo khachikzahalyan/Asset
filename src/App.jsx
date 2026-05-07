@@ -9,6 +9,10 @@ import ForbiddenPage from '@/pages/ForbiddenPage.jsx';
 import NotFoundPage from '@/pages/NotFoundPage.jsx';
 import BranchListPage from '@/pages/BranchListPage.jsx';
 import BranchDetailPage from '@/pages/BranchDetailPage.jsx';
+import EmployeeListPage from '@/pages/EmployeeListPage.jsx';
+import EmployeeDetailPage from '@/pages/EmployeeDetailPage.jsx';
+import AssetListPage from '@/pages/AssetListPage.jsx';
+import AssetDetailPage from '@/pages/AssetDetailPage.jsx';
 import UsersPage from '@/pages/UsersPage.jsx';
 
 import AppShell from '@/components/layout/AppShell.jsx';
@@ -54,6 +58,38 @@ export default function App() {
           element={
             <RoleGate roles={[ROLES.SUPER_ADMIN, ROLES.ASSET_ADMIN]}>
               <BranchDetailPage />
+            </RoleGate>
+          }
+        />
+        <Route
+          path="/employees"
+          element={
+            <RoleGate roles={[ROLES.SUPER_ADMIN, ROLES.ASSET_ADMIN, ROLES.TECH_ADMIN]}>
+              <EmployeeListPage />
+            </RoleGate>
+          }
+        />
+        <Route
+          path="/employees/:id"
+          element={
+            <RoleGate roles={[ROLES.SUPER_ADMIN, ROLES.ASSET_ADMIN, ROLES.TECH_ADMIN]}>
+              <EmployeeDetailPage />
+            </RoleGate>
+          }
+        />
+        <Route
+          path="/assets"
+          element={
+            <RoleGate roles={[ROLES.SUPER_ADMIN, ROLES.ASSET_ADMIN, ROLES.TECH_ADMIN]}>
+              <AssetListPage />
+            </RoleGate>
+          }
+        />
+        <Route
+          path="/assets/:assetId"
+          element={
+            <RoleGate roles={[ROLES.SUPER_ADMIN, ROLES.ASSET_ADMIN, ROLES.TECH_ADMIN]}>
+              <AssetDetailPage />
             </RoleGate>
           }
         />

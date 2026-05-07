@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { ChevronLeft, Pencil, PowerOff, Power, Building2, Warehouse } from 'lucide-react';
+import { ChevronLeft, Pencil, PowerOff, Power } from 'lucide-react';
 
 import PageHeader from '@/components/common/PageHeader.jsx';
 import { Button } from '@/components/ui/button.jsx';
@@ -17,7 +17,6 @@ import { useBranch } from '@/hooks/useBranch.js';
 import { firestoreBranchRepository } from '@/infra/repositories/firestoreBranchRepository.js';
 import { localize } from '@/lib/localize.js';
 import { ROLES } from '@/domain/roles.js';
-import { BRANCH_TYPES } from '@/domain/branches.js';
 
 export default function BranchDetailPage() {
   const { id } = useParams();
@@ -94,15 +93,11 @@ export default function BranchDetailPage() {
     }
   }
 
-  const TypeIcon = branch.type === BRANCH_TYPES.WAREHOUSE ? Warehouse : Building2;
-
   return (
     <>
       <PageHeader
         title={localize(branch.name, lng)}
-        description={
-          branch.type === BRANCH_TYPES.WAREHOUSE ? t('warehouseType') : t('branchType')
-        }
+        description={branch.address || null}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Link
@@ -160,17 +155,29 @@ export default function BranchDetailPage() {
               </ul>
             </Field>
 
-            <Field label={t('formTypeLabel')}>
-              <span className="inline-flex items-center gap-1.5">
-                <TypeIcon className="h-3.5 w-3.5" aria-hidden="true" />
-                {branch.type === BRANCH_TYPES.WAREHOUSE
-                  ? t('warehouseType')
-                  : t('branchType')}
-              </span>
-            </Field>
-
             <Field label={t('formAddressLabel')}>
               <span className="text-muted-foreground">{branch.address || '—'}</span>
+            </Field>
+
+            <Field label={t('formPhoneLabel')}>
+              {branch.phone ? (
+                <a
+                  href={`tel:${branch.phone}`}
+                  className="text-primary underline-offset-4 hover:underline"
+                >
+                  {branch.phone}
+                </a>
+              ) : (
+                <span className="text-muted-foreground">—</span>
+              )}
+            </Field>
+
+            <Field label={t('headOffice')}>
+              {branch.isPrimary ? (
+                <Badge variant="success">{t('headOfficeBadge')}</Badge>
+              ) : (
+                <span className="text-muted-foreground">{t('none')}</span>
+              )}
             </Field>
           </CardContent>
         </Card>

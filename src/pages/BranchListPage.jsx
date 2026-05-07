@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Plus, Search, Building2, Warehouse, Filter } from 'lucide-react';
+import { Plus, Search, Filter, Star } from 'lucide-react';
 
 import PageHeader from '@/components/common/PageHeader.jsx';
 import { Button } from '@/components/ui/button.jsx';
@@ -24,7 +24,6 @@ import { useBranches } from '@/hooks/useBranches.js';
 import { firestoreBranchRepository } from '@/infra/repositories/firestoreBranchRepository.js';
 import { localize } from '@/lib/localize.js';
 import { ROLES } from '@/domain/roles.js';
-import { BRANCH_TYPES } from '@/domain/branches.js';
 
 const ACTIVE_FILTERS = ['all', 'active', 'closed'];
 
@@ -132,7 +131,6 @@ export default function BranchListPage() {
           <TableHeader>
             <TableRow>
               <TableHead>{t('name')}</TableHead>
-              <TableHead>{t('type')}</TableHead>
               <TableHead>{t('address')}</TableHead>
               <TableHead className="text-right">{t('status')}</TableHead>
             </TableRow>
@@ -141,23 +139,19 @@ export default function BranchListPage() {
             {rows.map((b) => (
               <TableRow key={b.branchId}>
                 <TableCell>
-                  <Link
-                    to={`/branches/${b.branchId}`}
-                    className="font-medium text-primary underline-offset-4 hover:underline"
-                  >
-                    {localize(b.name, lng)}
-                  </Link>
-                </TableCell>
-                <TableCell>
-                  <span className="inline-flex items-center gap-1.5 text-sm">
-                    {b.type === BRANCH_TYPES.WAREHOUSE ? (
-                      <Warehouse className="h-3.5 w-3.5" aria-hidden="true" />
-                    ) : (
-                      <Building2 className="h-3.5 w-3.5" aria-hidden="true" />
-                    )}
-                    {b.type === BRANCH_TYPES.WAREHOUSE
-                      ? t('warehouseType')
-                      : t('branchType')}
+                  <span className="inline-flex items-center gap-2">
+                    <Link
+                      to={`/branches/${b.branchId}`}
+                      className="font-medium text-primary underline-offset-4 hover:underline"
+                    >
+                      {localize(b.name, lng)}
+                    </Link>
+                    {b.isPrimary ? (
+                      <Badge variant="muted" className="gap-1">
+                        <Star className="h-3 w-3" aria-hidden="true" />
+                        {t('headOfficeBadge')}
+                      </Badge>
+                    ) : null}
                   </span>
                 </TableCell>
                 <TableCell className="text-muted-foreground">

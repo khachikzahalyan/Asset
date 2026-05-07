@@ -164,7 +164,13 @@ service cloud.firestore {
                     && isValidBranchName(request.resource.data.name)
                     && isValidBranchType(request.resource.data.type)
                     && request.resource.data.isActive is bool
+                    && (!('isPrimary' in request.resource.data) || request.resource.data.isPrimary is bool)
                     && request.resource.data.address is string
+                    && (
+                         !('phone' in request.resource.data)
+                         || request.resource.data.phone == null
+                         || request.resource.data.phone is string
+                       )
                     && (
                          request.resource.data.responsibleEmployeeId == null
                          || request.resource.data.responsibleEmployeeId is string
@@ -174,16 +180,428 @@ service cloud.firestore {
                     && request.resource.data.createdAt == request.time
                     && request.resource.data.updatedAt == request.time;
 
+      // The primary-branch invariant write path: when one branch flips to
+      // isPrimary=true, the previously-primary branch is demoted in the
+      // same transaction. The demotion update only mutates `isPrimary`,
+      // `updatedBy`, `updatedAt` — accept that minimal patch alongside
+      // the regular full-shape update.
       allow update: if isSuperAdmin()
-                    && isValidBranchName(request.resource.data.name)
-                    && isValidBranchType(request.resource.data.type)
-                    && request.resource.data.isActive is bool
-                    && request.resource.data.address is string
                     && (
-                         request.resource.data.responsibleEmployeeId == null
-                         || request.resource.data.responsibleEmployeeId is string
-                       )
+                         (
+                           isValidBranchName(request.resource.data.name)
+                           && isValidBranchType(request.resource.data.type)
+                           && request.resource.data.isActive is bool
+                           && (!('isPrimary' in request.resource.data) || request.resource.data.isPrimary is bool)
+                           && request.resource.data.address is string
+                           && (
+                                !('phone' in request.resource.data)
+                                || request.resource.data.phone == null
+                                || request.resource.data.phone is string
+                              )
+                           && (
+                                request.resource.data.responsibleEmployeeId == null
+                                || request.resource.data.responsibleEmployeeId is string
+                              )
+                           && request.resource.data.createdBy == resource.data.createdBy
+                           && request.resource.data.updatedBy == request.auth.uid
+                           && request.resource.data.updatedAt == request.time
+                         ) || (
+                           // Demotion patch: only isPrimary, updatedBy, updatedAt change.
+                           request.resource.data.diff(resource.data).affectedKeys()
+                             .hasOnly(['isPrimary', 'updatedBy', 'updatedAt'])
+                           && request.resource.data.isPrimary == false
+                           && request.resource.data.updatedBy == request.auth.uid
+                           && request.resource.data.updatedAt == request.time
+                         )
+                       );
+
+      allow delete: if false;
+    }
+
+    // ---- employees ----
+    // Read by any admin. Tech Admin is read-only.
+    // Write (create / update / setActive) by super_admin + asset_admin.
+    // Reactivation (isActive flips false -> true) is super_admin only.
+    // Soft-delete only (no delete).
+    function isAsciiPrintableEmail(s) {
+      return s is string
+             && s.matches('^[\\x21-\\x7e]+@[\\x21-\\x7e]+\\.[\\x21-\\x7e]+$');
+    }
+
+    // Wave-1 simplification (2026-05-07):
+    //   - `middleName`, `position`, `hiredAt` removed from the Wave-1 form;
+    //     rules no longer mention them. Existing docs that still carry the
+    //     old fields keep them (rules don't forbid extra keys, just unknowns
+    //     are tolerated by `isValidEmployeeShape` because we only check the
+    //     keys we care about).
+    //   - `department` is a new optional free-text field aligning with
+    //     `AMS_Plan_v3.md` §14 ("отдел").
+    //
+    // Wave 1.5 (2026-05-07, user decision 3A):
+    //   - `branchId` is REQUIRED on every write — must be a non-empty string.
+    //   - Pre-existing rows that were written under the relaxed Wave-1 rules
+    //     may still have `branchId == null` in the database. The READ rule
+    //     intentionally does not gate on `branchId`, so admins can still
+    //     fetch and dozapolnit such rows via the detail page CTA. The write
+    //     rule below ensures every UPDATE produces a non-null `branchId`.
+    function isValidEmployeeShape(d) {
+      return d.firstName is string && d.firstName.size() > 0
+             && d.lastName is string && d.lastName.size() > 0
+             && d.email is string && isAsciiPrintableEmail(d.email)
+             && (!('phone' in d) || d.phone == null || d.phone is string)
+             && d.branchId is string && d.branchId.size() > 0
+             && (!('departmentId' in d) || d.departmentId == null || d.departmentId is string)
+             && (!('department' in d) || d.department == null || d.department is string)
+             && d.isActive is bool;
+    }
+
+    match /employees/{employeeId} {
+      allow read: if isAdmin();
+
+      allow create: if (isSuperAdmin() || isAssetAdmin())
+                    && isValidEmployeeShape(request.resource.data)
+                    && request.resource.data.createdBy == request.auth.uid
+                    && request.resource.data.updatedBy == request.auth.uid
+                    && request.resource.data.createdAt == request.time
+                    && request.resource.data.updatedAt == request.time
+                    && request.resource.data.terminatedAt == null;
+
+      allow update: if (isSuperAdmin() || isAssetAdmin())
+                    && isValidEmployeeShape(request.resource.data)
                     && request.resource.data.createdBy == resource.data.createdBy
+                    && request.resource.data.createdAt == resource.data.createdAt
+                    && request.resource.data.updatedBy == request.auth.uid
+                    && request.resource.data.updatedAt == request.time
+                    // Reactivation (isActive flips false -> true) is super_admin only.
+                    && (
+                         resource.data.isActive == request.resource.data.isActive
+                         || (resource.data.isActive == true && request.resource.data.isActive == false)
+                         || (resource.data.isActive == false && request.resource.data.isActive == true && isSuperAdmin())
+                       );
+
+      allow delete: if false;
+    }
+
+    // ---- email_index ----
+    // Sentinel collection enforcing employee email uniqueness in a transaction.
+    // Doc id = lowercased trimmed email; body { employeeId, createdAt }.
+    // Read access required so the same admins that write employees can verify
+    // uniqueness via tx.get during create/update; non-admins are denied.
+    match /email_index/{emailKey} {
+      allow read: if isAdmin();
+
+      allow create: if (isSuperAdmin() || isAssetAdmin())
+                    && request.resource.data.employeeId is string
+                    && request.resource.data.createdAt == request.time;
+
+      allow update: if (isSuperAdmin() || isAssetAdmin())
+                    && request.resource.data.employeeId is string
+                    && request.resource.data.createdAt == request.time;
+
+      allow delete: if (isSuperAdmin() || isAssetAdmin());
+    }
+
+    // ---- categories ----
+    // Read by any admin; create/update by super_admin only; soft-deactivate
+    // only (no delete). Counter docs are governed by the separate
+    // /category_counters block below.
+    // Detailed contract in docs/features/asset-categories.md.
+    function isValidLocaleMap(m) {
+      return m is map
+             && m.keys().hasOnly(['ru', 'en', 'hy'])
+             && m.ru is string
+             && m.en is string
+             && m.hy is string;
+    }
+
+    function isValidInventoryPrefix(p) {
+      return p is string && p.matches('^[A-Z0-9]+$');
+    }
+
+    match /categories/{categoryId} {
+      allow read: if isAdmin();
+
+      allow create: if isSuperAdmin()
+                    && isValidLocaleMap(request.resource.data.name)
+                    && isValidInventoryPrefix(request.resource.data.inventoryCodePrefix)
+                    && request.resource.data.requiresMultilang is bool
+                    && request.resource.data.isActive is bool
+                    && request.resource.data.createdBy == request.auth.uid
+                    && request.resource.data.updatedBy == request.auth.uid
+                    && request.resource.data.createdAt == request.time
+                    && request.resource.data.updatedAt == request.time;
+
+      allow update: if isSuperAdmin()
+                    && isValidLocaleMap(request.resource.data.name)
+                    && isValidInventoryPrefix(request.resource.data.inventoryCodePrefix)
+                    && request.resource.data.requiresMultilang is bool
+                    && request.resource.data.isActive is bool
+                    && request.resource.data.createdBy == resource.data.createdBy
+                    && request.resource.data.createdAt == resource.data.createdAt
+                    && request.resource.data.updatedBy == request.auth.uid
+                    && request.resource.data.updatedAt == request.time;
+
+      allow delete: if false;
+    }
+
+    // ---- category_counters ----
+    // One counter doc per category (doc id == categoryId). Increments come
+    // from the asset-create flow, so super_admin AND asset_admin must be able
+    // to write. Strict-monotonic-by-one increment enforced — a buggy or
+    // malicious client cannot reset, decrement, or skip ahead.
+    //
+    // Initial create (next == 1) is allowed for super_admin only; the seed
+    // bootstrap runs as super_admin so this matches the install flow. Once
+    // the doc exists, asset_admin and super_admin may both increment it.
+    match /category_counters/{categoryId} {
+      allow read: if isAdmin();
+
+      allow create: if isSuperAdmin()
+                    && request.resource.data.keys().hasOnly(['next', 'updatedAt'])
+                    && request.resource.data.next == 1
+                    && request.resource.data.updatedAt == request.time;
+
+      allow update: if (isSuperAdmin() || isAssetAdmin())
+                    && request.resource.data.next is int
+                    && resource.data.next is int
+                    && request.resource.data.next == resource.data.next + 1
+                    && request.resource.data.updatedAt == request.time
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                       .hasOnly(['next', 'updatedAt']);
+
+      allow delete: if false;
+    }
+
+    // ---- asset_statuses ----
+    // Read by any admin; create/update by super_admin only; soft-deactivate
+    // only (no delete).
+    //
+    // Lifecycle invariant: `isFinal` is one-way. Once a status is final
+    // (true) it cannot be flipped back to non-final (false), because that
+    // would silently re-open assets that the audit trail records as
+    // permanently closed. The rule below allows isFinal to stay the same
+    // OR flip false -> true, but never true -> false.
+    //
+    // Detailed contract in docs/features/asset-status-catalog.md.
+    function isValidColorHex(c) {
+      return c is string && c.matches('^#[0-9a-f]{6}$');
+    }
+
+    match /asset_statuses/{statusId} {
+      allow read: if isAdmin();
+
+      allow create: if isSuperAdmin()
+                    && isValidLocaleMap(request.resource.data.name)
+                    && isValidColorHex(request.resource.data.color)
+                    && request.resource.data.isFinal is bool
+                    && request.resource.data.isAssignable is bool
+                    && request.resource.data.sortOrder is int
+                    && request.resource.data.isActive is bool
+                    && request.resource.data.createdBy == request.auth.uid
+                    && request.resource.data.updatedBy == request.auth.uid
+                    && request.resource.data.createdAt == request.time
+                    && request.resource.data.updatedAt == request.time;
+
+      allow update: if isSuperAdmin()
+                    && isValidLocaleMap(request.resource.data.name)
+                    && isValidColorHex(request.resource.data.color)
+                    && request.resource.data.isFinal is bool
+                    && request.resource.data.isAssignable is bool
+                    && request.resource.data.sortOrder is int
+                    && request.resource.data.isActive is bool
+                    && request.resource.data.createdBy == resource.data.createdBy
+                    && request.resource.data.createdAt == resource.data.createdAt
+                    && request.resource.data.updatedBy == request.auth.uid
+                    && request.resource.data.updatedAt == request.time
+                    // isFinal is one-way: stay-the-same or flip false -> true.
+                    && (
+                         request.resource.data.isFinal == resource.data.isFinal
+                         || (
+                              resource.data.isFinal == false
+                              && request.resource.data.isFinal == true
+                            )
+                       );
+
+      allow delete: if false;
+    }
+
+    // ---- assets ----
+    // Read by any admin (Tech Admin needs read for technical attributes
+    // in Phase 2 but already needs read in Phase 1 for the registry view).
+    // Write (create / update / status change) by super_admin + asset_admin.
+    // Tech Admin write access lands in Phase 2 when technical-attribute
+    // editing ships.
+    //
+    // Phase 1 employee read of own assets: deferred. Until users/{uid}
+    // reliably carries `employeeId`, the self-service read path goes
+    // through a Cloud Function (Step 4). Employee read is `false` here.
+    //
+    // Invariants:
+    //   - `inventoryCode` is immutable across the asset's lifetime.
+    //   - `categoryId` is immutable (changing categories would break the
+    //     prefix invariant baked into the inventory code).
+    //   - Hard-delete forbidden — final statuses + isActive=false are how
+    //     assets exit the active inventory.
+    //
+    // Detailed contract in docs/features/asset-registry.md.
+
+    function isValidInventoryCode(c) {
+      return c is string && c.matches('^[A-Z0-9]+/[0-9]+$');
+    }
+
+    function isValidAssignedTo(a) {
+      return a is map
+             && a.keys().hasOnly(['kind', 'id'])
+             && (
+                  (a.kind == 'warehouse' && a.id == null)
+                  || (
+                       (a.kind == 'employee' || a.kind == 'branch' || a.kind == 'department')
+                       && a.id is string
+                       && a.id.size() > 0
+                     )
+                );
+    }
+
+    // The asset name is Tier 3 free text. Storage is either a plain string
+    // (single-language category) or a 3-locale map (multi-language
+    // category). Both shapes accepted.
+    function isValidAssetName(n) {
+      return n is string
+             || (
+                  n is map
+                  && n.keys().hasOnly(['ru', 'en', 'hy'])
+                  && n.ru is string
+                  && n.en is string
+                  && n.hy is string
+                );
+    }
+
+    // Tier 4 ASCII-only string OR null. The printable ASCII range
+    // 0x20..0x7E excludes control chars but allows spaces, dashes, etc.
+    function isAsciiOrNull(s) {
+      return s == null
+             || (s is string && s.matches('^[\\x20-\\x7e]*$'));
+    }
+
+    // ---- assignment_events ----
+    // Wave-1 Step 4: append-only assignment history. One row per
+    // issue / return / transfer of an asset. The asset doc's
+    // `assignedTo` is the source of truth for the *current* holder;
+    // this collection is the historical record.
+    //
+    // Rule contract:
+    //   - read: any admin (super, asset, tech). Employee read of own
+    //     events is deferred until users/{uid}.employeeId is reliable
+    //     (mirrors the asset-read decision in Step 2).
+    //   - create: super_admin OR asset_admin. The shape is fully
+    //     validated. Fields locked at the rule edge:
+    //       eventId, assetId, fromAssignment, toAssignment, eventType,
+    //       occurredAt, notes, actUploadPath, actorUid, actorRole, createdAt.
+    //   - update / delete: forbidden for everyone, including super_admin.
+    //
+    // The actUploadPath is null in Wave-1 (no upload UI yet) but the
+    // shape regex is locked now so Wave-2 doesn't need a rule revision.
+    function isValidEventType(t) {
+      return t in ['issue', 'return', 'transfer'];
+    }
+
+    function isValidActUploadPath(p) {
+      return p == null
+             || (
+                  p is string
+                  && p.matches('^assets/[^/]+/acts/[^/]+\\.(pdf|jpg|jpeg|png)$')
+                );
+    }
+
+    match /assignment_events/{eventId} {
+      allow read: if isAdmin();
+
+      allow create: if (isSuperAdmin() || isAssetAdmin())
+                    && request.resource.data.eventId == eventId
+                    && request.resource.data.assetId is string
+                    && request.resource.data.assetId.size() > 0
+                    && (
+                         request.resource.data.fromAssignment == null
+                         || isValidAssignedTo(request.resource.data.fromAssignment)
+                       )
+                    && isValidAssignedTo(request.resource.data.toAssignment)
+                    && isValidEventType(request.resource.data.eventType)
+                    && request.resource.data.occurredAt is timestamp
+                    && (
+                         request.resource.data.notes == null
+                         || (
+                              request.resource.data.notes is string
+                              && request.resource.data.notes.size() <= 1000
+                            )
+                       )
+                    && isValidActUploadPath(request.resource.data.actUploadPath)
+                    && request.resource.data.actorUid == request.auth.uid
+                    && request.resource.data.actorRole is string
+                    && request.resource.data.createdAt == request.time;
+
+      allow update, delete: if false;
+    }
+
+    match /assets/{assetId} {
+      allow read: if isAdmin();
+
+      allow create: if (isSuperAdmin() || isAssetAdmin())
+                    && request.resource.data.categoryId is string
+                    && request.resource.data.categoryId.size() > 0
+                    && request.resource.data.statusId is string
+                    && request.resource.data.statusId.size() > 0
+                    && isValidInventoryCode(request.resource.data.inventoryCode)
+                    && isValidAssetName(request.resource.data.name)
+                    && isAsciiOrNull(request.resource.data.brand)
+                    && isAsciiOrNull(request.resource.data.model)
+                    && isAsciiOrNull(request.resource.data.serialNumber)
+                    && (
+                         request.resource.data.branchId == null
+                         || request.resource.data.branchId is string
+                       )
+                    && isValidAssignedTo(request.resource.data.assignedTo)
+                    && (
+                         request.resource.data.notes == null
+                         || request.resource.data.notes is string
+                       )
+                    && (
+                         request.resource.data.purchasePrice == null
+                         || request.resource.data.purchasePrice is number
+                       )
+                    && request.resource.data.isActive is bool
+                    && request.resource.data.createdBy == request.auth.uid
+                    && request.resource.data.updatedBy == request.auth.uid
+                    && request.resource.data.createdAt == request.time
+                    && request.resource.data.updatedAt == request.time;
+
+      allow update: if (isSuperAdmin() || isAssetAdmin())
+                    // Immutability invariants.
+                    && request.resource.data.categoryId == resource.data.categoryId
+                    && request.resource.data.inventoryCode == resource.data.inventoryCode
+                    // statusId may change (status_change flow), but must stay
+                    // a non-empty string.
+                    && request.resource.data.statusId is string
+                    && request.resource.data.statusId.size() > 0
+                    && isValidAssetName(request.resource.data.name)
+                    && isAsciiOrNull(request.resource.data.brand)
+                    && isAsciiOrNull(request.resource.data.model)
+                    && isAsciiOrNull(request.resource.data.serialNumber)
+                    && (
+                         request.resource.data.branchId == null
+                         || request.resource.data.branchId is string
+                       )
+                    && isValidAssignedTo(request.resource.data.assignedTo)
+                    && (
+                         request.resource.data.notes == null
+                         || request.resource.data.notes is string
+                       )
+                    && (
+                         request.resource.data.purchasePrice == null
+                         || request.resource.data.purchasePrice is number
+                       )
+                    && request.resource.data.isActive is bool
+                    && request.resource.data.createdBy == resource.data.createdBy
+                    && request.resource.data.createdAt == resource.data.createdAt
                     && request.resource.data.updatedBy == request.auth.uid
                     && request.resource.data.updatedAt == request.time;
 

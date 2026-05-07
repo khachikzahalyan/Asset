@@ -3,5 +3,13 @@
   "addCategory": "Добавить категорию",
   "name": "Название",
   "description": "Описание",
-  "inventoryCodePrefix": "Префикс инвентарного номера"
+  "inventoryCodePrefix": "Префикс инвентарного номера",
+  "requiresMultilang": "Многоязычное название",
+  "device": "Устройство",
+  "furniture": "Мебель",
+  "license": "Лицензии",
+  "errorRequired": "Обязательное поле",
+  "errorNameAllLocales": "Заполните название на всех языках",
+  "errorPrefixFormat": "Префикс должен содержать только заглавные латинские буквы и цифры",
+  "errorPrefixInUse": "Этот префикс уже используется другой категорией"
 }

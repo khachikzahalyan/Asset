@@ -4,26 +4,39 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mocks = vi.hoisted(() => ({
   docCounter: 0,
   newDoc: () => ({ id: `doc_${++mocks.docCounter}` }),
-  capturedTx: { sets: [], updates: [] },
+  capturedTx: { sets: [], updates: [], gets: [] },
   runTransactionImpl: null,
   onSnapshotUnsub: vi.fn(),
+  // `getDocs(query(...))` is used by createBranch / updateBranch to find
+  // currently-primary branches outside of the transaction. Default to "no
+  // primary" — individual tests opt in by overriding this.
+  primaryBranchSnapshots: [],
 }));
 
 vi.mock('firebase/firestore', () => ({
   collection: vi.fn((_db, name) => ({ __collection: name })),
   doc: vi.fn((_dbOrCol, ...args) => {
     if (args.length === 0) {
-      // doc(collectionRef) => auto-id
       return mocks.newDoc();
     }
     return { id: args[args.length - 1], __ref: args };
   }),
   onSnapshot: vi.fn(() => mocks.onSnapshotUnsub),
   orderBy: vi.fn((field, dir) => ({ __order: [field, dir] })),
+  where: vi.fn((field, op, value) => ({ __where: [field, op, value] })),
   query: vi.fn((coll, ...mods) => ({ __query: coll, mods })),
+  getDocs: vi.fn(() => Promise.resolve({ docs: mocks.primaryBranchSnapshots })),
   runTransaction: vi.fn((_db, fn) => {
-    mocks.capturedTx = { sets: [], updates: [] };
+    mocks.capturedTx = { sets: [], updates: [], gets: [] };
     const tx = {
+      get: vi.fn((ref) => {
+        mocks.capturedTx.gets.push(ref);
+        // Resolve to the snapshot whose `.ref` matches; otherwise empty.
+        const match = mocks.primaryBranchSnapshots.find((s) => s.ref === ref);
+        return Promise.resolve(
+          match ?? { exists: () => false, data: () => undefined, ref, id: ref?.id }
+        );
+      }),
       set: vi.fn((ref, data) => {
         mocks.capturedTx.sets.push({ ref, data });
       }),
@@ -58,6 +71,7 @@ import {
 
 beforeEach(() => {
   mocks.docCounter = 0;
+  mocks.primaryBranchSnapshots = [];
   auditMocks.newAuditLogRef.mockClear();
   auditMocks.buildAuditLog.mockClear();
   auditMocks.newAuditLogRef.mockImplementation(() => ({ id: 'audit_1' }));
@@ -83,6 +97,7 @@ describe('firestoreBranchRepository', () => {
           name: { ru: 'Главный', en: 'HQ', hy: 'Գլխավոր' },
           type: 'warehouse',
           address: 'Yerevan central',
+          phone: '+374 99 12 34 56',
           responsibleEmployeeId: null,
           isActive: true,
         },
@@ -97,6 +112,7 @@ describe('firestoreBranchRepository', () => {
         name: { ru: 'Главный', en: 'HQ', hy: 'Գլխավոր' },
         type: 'warehouse',
         address: 'Yerevan central',
+        phone: '+374 99 12 34 56',
         responsibleEmployeeId: null,
         isActive: true,
         createdBy: 'u_123',
@@ -120,9 +136,56 @@ describe('firestoreBranchRepository', () => {
         name: { ru: 'Главный', en: 'HQ', hy: 'Գլխավոր' },
         type: 'warehouse',
         address: 'Yerevan central',
+        phone: '+374 99 12 34 56',
         responsibleEmployeeId: null,
         isActive: true,
+        isPrimary: false,
       });
+    });
+
+    it('demotes the previously-primary branch when creating a new primary one', async () => {
+      // Existing primary doc; refs are matched by reference equality in the
+      // mocked transaction.
+      const previousPrimaryRef = { id: 'b_old', __ref: ['branches', 'b_old'] };
+      mocks.primaryBranchSnapshots = [
+        {
+          id: 'b_old',
+          ref: previousPrimaryRef,
+          exists: () => true,
+          data: () => ({
+            name: { ru: 'Старый', en: 'Old', hy: 'Հին' },
+            type: 'branch',
+            address: '',
+            responsibleEmployeeId: null,
+            isActive: true,
+            isPrimary: true,
+          }),
+        },
+      ];
+
+      await createBranch(
+        {
+          name: { ru: 'Главный', en: 'HQ', hy: 'Գ' },
+          type: 'branch',
+          address: '',
+          responsibleEmployeeId: null,
+          isActive: true,
+          isPrimary: true,
+        },
+        { uid: 'u_1', role: 'super_admin' }
+      );
+
+      // Two writes inside the tx: the new branch (set) + the demotion (update).
+      // Plus two audit_logs sets — one for the new branch's create, one for
+      // the demotion.
+      const demote = mocks.capturedTx.updates.find((u) => u.ref === previousPrimaryRef);
+      expect(demote).toBeDefined();
+      expect(demote.data).toMatchObject({
+        isPrimary: false,
+        updatedBy: 'u_1',
+      });
+      // The new branch set carries isPrimary: true.
+      expect(mocks.capturedTx.sets[0].data.isPrimary).toBe(true);
     });
 
     it('rejects a missing actor', async () => {
@@ -137,6 +200,7 @@ describe('firestoreBranchRepository', () => {
           name: { ru: '  Главный  ', en: '  HQ  ', hy: '  Գ  ' },
           type: 'branch',
           address: '  Yerevan  ',
+          phone: '  +374 12 34 56 78  ',
         },
         { uid: 'u_1', role: 'super_admin' }
       );
@@ -146,6 +210,7 @@ describe('firestoreBranchRepository', () => {
         hy: 'Գ',
       });
       expect(mocks.capturedTx.sets[0].data.address).toBe('Yerevan');
+      expect(mocks.capturedTx.sets[0].data.phone).toBe('+374 12 34 56 78');
     });
   });
 
@@ -156,6 +221,7 @@ describe('firestoreBranchRepository', () => {
         name: { ru: 'Старое', en: 'Old', hy: 'Հին' },
         type: 'branch',
         address: 'A',
+        phone: '+374 1',
         responsibleEmployeeId: null,
         isActive: true,
       };
@@ -165,6 +231,7 @@ describe('firestoreBranchRepository', () => {
           name: { ru: 'Новое', en: 'New', hy: 'Նոր' },
           type: 'branch',
           address: 'B',
+          phone: '+374 2',
           responsibleEmployeeId: null,
           isActive: true,
         },
@@ -179,6 +246,7 @@ describe('firestoreBranchRepository', () => {
       expect(update.data).toMatchObject({
         name: { ru: 'Новое', en: 'New', hy: 'Նոր' },
         address: 'B',
+        phone: '+374 2',
         updatedBy: 'u_2',
         updatedAt: 'SERVER_TS',
       });
@@ -192,8 +260,13 @@ describe('firestoreBranchRepository', () => {
         before: {
           name: { ru: 'Старое', en: 'Old', hy: 'Հին' },
           address: 'A',
+          phone: '+374 1',
         },
-        after: { name: { ru: 'Новое', en: 'New', hy: 'Նոր' }, address: 'B' },
+        after: {
+          name: { ru: 'Новое', en: 'New', hy: 'Նոր' },
+          address: 'B',
+          phone: '+374 2',
+        },
       });
     });
 

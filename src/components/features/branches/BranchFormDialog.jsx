@@ -10,7 +10,6 @@ import { Spinner } from '@/components/ui/spinner.jsx';
 import MultiLangInput from '@/components/common/MultiLangInput/MultiLangInput.jsx';
 
 import {
-  BRANCH_TYPES,
   emptyBranchInput,
   sanitizeBranchInput,
   validateBranchInput,
@@ -33,10 +32,12 @@ export default function BranchFormDialog({ open, onClose, branch, onSubmit }) {
     if (!branch) return emptyBranchInput();
     return {
       name: { ru: branch.name?.ru ?? '', en: branch.name?.en ?? '', hy: branch.name?.hy ?? '' },
-      type: branch.type ?? BRANCH_TYPES.BRANCH,
+      type: branch.type ?? 'branch',
       address: branch.address ?? '',
+      phone: branch.phone ?? null,
       responsibleEmployeeId: branch.responsibleEmployeeId ?? null,
       isActive: branch.isActive ?? true,
+      isPrimary: Boolean(branch.isPrimary),
     };
   }, [branch]);
 
@@ -109,28 +110,6 @@ export default function BranchFormDialog({ open, onClose, branch, onSubmit }) {
           ) : null}
         </div>
 
-        <fieldset className="space-y-1.5">
-          <legend className="text-sm font-medium">{t('formTypeLabel')}</legend>
-          <div className="flex flex-wrap gap-3">
-            {[BRANCH_TYPES.BRANCH, BRANCH_TYPES.WAREHOUSE].map((type) => (
-              <label
-                key={type}
-                className="flex cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-accent"
-              >
-                <input
-                  type="radio"
-                  name="type"
-                  value={type}
-                  checked={form.type === type}
-                  onChange={() => setForm((f) => ({ ...f, type }))}
-                  disabled={submitting}
-                />
-                <span>{type === BRANCH_TYPES.BRANCH ? t('branchType') : t('warehouseType')}</span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
-
         <div className="space-y-1.5">
           <Label htmlFor="branch-address">{t('formAddressLabel')}</Label>
           <Input
@@ -139,6 +118,19 @@ export default function BranchFormDialog({ open, onClose, branch, onSubmit }) {
             value={form.address}
             onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
             placeholder={t('addressPlaceholder')}
+            disabled={submitting}
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="branch-phone">{t('formPhoneLabel')}</Label>
+          <Input
+            id="branch-phone"
+            name="phone"
+            type="tel"
+            value={form.phone ?? ''}
+            onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+            placeholder={t('phonePlaceholder')}
             disabled={submitting}
           />
         </div>

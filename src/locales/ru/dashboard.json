@@ -13,5 +13,7 @@
   "quickActions": "Быстрые действия",
   "addAsset": "Добавить актив",
   "issueAsset": "Выдать актив",
-  "addEmployee": "Добавить сотрудника"
+  "addEmployee": "Добавить сотрудника",
+  "nextWaveTooltip": "Появится в следующей волне",
+  "metricNextWave": "Появится после Wave 2 (Активы)"
 }

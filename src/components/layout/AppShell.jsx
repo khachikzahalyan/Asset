@@ -23,6 +23,8 @@ import {
 import LanguageSwitcher from '@/components/common/LanguageSwitcher.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Separator } from '@/components/ui/separator.jsx';
+import HeadOfficeBootstrap from '@/components/system/HeadOfficeBootstrap.jsx';
+import StatusesAndCategoriesBootstrap from '@/components/system/StatusesAndCategoriesBootstrap.jsx';
 import { cn } from '@/lib/utils.js';
 
 import { useAuth } from '@/contexts/AuthContext.jsx';
@@ -162,6 +164,8 @@ export default function AppShell() {
 
         <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">
           <div className="mx-auto w-full max-w-7xl">
+            <HeadOfficeBootstrap />
+            <StatusesAndCategoriesBootstrap />
             <Outlet />
           </div>
         </main>

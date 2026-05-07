@@ -3,5 +3,13 @@
   "addCategory": "Add category",
   "name": "Name",
   "description": "Description",
-  "inventoryCodePrefix": "Inventory code prefix"
+  "inventoryCodePrefix": "Inventory code prefix",
+  "requiresMultilang": "Multi-language name",
+  "device": "Device",
+  "furniture": "Furniture",
+  "license": "License",
+  "errorRequired": "This field is required",
+  "errorNameAllLocales": "Fill the name in every language",
+  "errorPrefixFormat": "Prefix must contain only uppercase Latin letters and digits",
+  "errorPrefixInUse": "This prefix is already used by another category"
 }

@@ -79,7 +79,7 @@ export default function RoleChangeDialog({
       onOpenChange(false);
     } catch (err) {
       console.error('[AMS role change]', err);
-      setError(err?.message ?? 'error');
+      setError(err?.message ?? t('genericError'));
     } finally {
       setBusy(false);
     }

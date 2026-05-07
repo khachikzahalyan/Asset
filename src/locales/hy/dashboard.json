@@ -13,5 +13,7 @@
   "quickActions": "Արագ գործողություններ",
   "addAsset": "Ավելացնել ակտիվ",
   "issueAsset": "Տրամադրել ակտիվ",
-  "addEmployee": "Ավելացնել աշխատակից"
+  "addEmployee": "Ավելացնել աշխատակից",
+  "nextWaveTooltip": "Կհայտնվի հաջորդ փուլում",
+  "metricNextWave": "Կհայտնվի Wave 2-ից հետո (Ակտիվներ)"
 }

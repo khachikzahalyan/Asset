@@ -13,5 +13,7 @@
   "quickActions": "Quick actions",
   "addAsset": "Add asset",
   "issueAsset": "Issue asset",
-  "addEmployee": "Add employee"
+  "addEmployee": "Add employee",
+  "nextWaveTooltip": "Coming in the next wave",
+  "metricNextWave": "Coming after Wave 2 (Assets)"
 }

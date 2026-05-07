@@ -30,5 +30,22 @@
   "openMenu": "Բացել ընտրացանկը",
   "closeMenu": "Փակել ընտրացանկը",
   "navUsers": "Օգտատերեր",
-  "navSidebar": "Կողագոտու նավիգացիա"
+  "navSidebar": "Կողագոտու նավիգացիա",
+  "audit": {
+    "historyTitle": "Փոփոխությունների պատմություն",
+    "historyEmpty": "Դեռևս գրառումներ չկան։",
+    "at": "Ամսաթիվ",
+    "action": "Գործողություն",
+    "actor": "Կատարող",
+    "changedFields": "Փոփոխություններ",
+    "actionCreate": "Ստեղծված է",
+    "actionUpdate": "Թարմացված է",
+    "actionDeactivate": "Ապաակտիվացված է",
+    "actionActivate": "Ակտիվացված է",
+    "actionReactivate": "Վերականգնված է",
+    "actionAssign": "Կցված է",
+    "actionUnassign": "Հանված է",
+    "actionTransfer": "Փոխանցված է",
+    "actionStatusChange": "Կարգավիճակի փոփոխություն"
+  }
 }

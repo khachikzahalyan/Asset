@@ -28,8 +28,10 @@ describe('branches domain', () => {
       name: { ru: '', en: '', hy: '' },
       type: 'branch',
       address: '',
+      phone: null,
       responsibleEmployeeId: null,
       isActive: true,
+      isPrimary: false,
     });
   });
 
@@ -45,9 +47,32 @@ describe('branches domain', () => {
         name: { ru: 'Главный', en: 'HQ', hy: 'Գլխավոր' },
         type: 'warehouse',
         address: 'Yerevan',
+        phone: null,
         responsibleEmployeeId: 'emp_1',
         isActive: true,
+        isPrimary: false,
       });
+    });
+
+    it('trims a non-empty phone and keeps it as a string', () => {
+      expect(sanitizeBranchInput({ phone: '  +374 11 22 33 44  ' }).phone).toBe(
+        '+374 11 22 33 44'
+      );
+    });
+
+    it('coerces empty / whitespace-only / missing phone to null', () => {
+      expect(sanitizeBranchInput({ phone: '' }).phone).toBeNull();
+      expect(sanitizeBranchInput({ phone: '   ' }).phone).toBeNull();
+      expect(sanitizeBranchInput({ phone: null }).phone).toBeNull();
+      expect(sanitizeBranchInput({}).phone).toBeNull();
+    });
+
+    it('coerces isPrimary to a boolean (defaults to false when missing)', () => {
+      expect(sanitizeBranchInput({}).isPrimary).toBe(false);
+      expect(sanitizeBranchInput({ isPrimary: undefined }).isPrimary).toBe(false);
+      expect(sanitizeBranchInput({ isPrimary: true }).isPrimary).toBe(true);
+      expect(sanitizeBranchInput({ isPrimary: 'yes' }).isPrimary).toBe(true);
+      expect(sanitizeBranchInput({ isPrimary: 0 }).isPrimary).toBe(false);
     });
 
     it('coerces unknown type to "branch"', () => {

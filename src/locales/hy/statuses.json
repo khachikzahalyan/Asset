@@ -5,9 +5,13 @@
   "color": "Գույն",
   "isFinal": "Վերջնական",
   "isAssignable": "Կարող է կցվել",
-  "in_stock": "Պահեստում",
-  "issued": "Տրամադրված",
-  "under_repair": "Վերանորոգման մեջ",
-  "written_off": "Դուրս գրված",
-  "lost": "Կորած"
+  "sortOrder": "Դասավորություն",
+  "warehouse": "Պահեստ",
+  "assigned": "Տրված",
+  "in_repair": "Վերանորոգման մեջ",
+  "written_off": "Դուրսգրված",
+  "disposed": "Ոչնչացված",
+  "errorRequired": "Պարտադիր դաշտ",
+  "errorNameAllLocales": "Լրացրեք անվանումը բոլոր լեզուներով",
+  "errorColorFormat": "Գույնը պետք է լինի #rrggbb ձևաչափով"
 }

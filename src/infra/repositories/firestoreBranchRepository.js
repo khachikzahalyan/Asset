@@ -15,11 +15,13 @@
 import {
   collection,
   doc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
   runTransaction,
   serverTimestamp,
+  where,
 } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase/index.js';
@@ -41,8 +43,10 @@ function auditSnapshot(obj) {
     name: obj.name ?? null,
     type: obj.type ?? null,
     address: obj.address ?? null,
+    phone: obj.phone ?? null,
     responsibleEmployeeId: obj.responsibleEmployeeId ?? null,
     isActive: obj.isActive ?? null,
+    isPrimary: obj.isPrimary ?? null,
   };
 }
 
@@ -100,7 +104,11 @@ export function subscribeBranch(id, onData, onError) {
 }
 
 /**
- * Atomically create a branch and an audit_logs entry.
+ * Atomically create a branch and an audit_logs entry. When `isPrimary` is
+ * true on the new branch, the previously-primary branch (if any) is flipped
+ * to `isPrimary: false` in the same transaction so at most one branch
+ * remains marked as the head office.
+ *
  * @param {import('@/domain/branches.js').BranchInput} input
  * @param {{ uid: string, role: string }} actor
  * @returns {Promise<string>} new branchId
@@ -111,20 +119,61 @@ export async function createBranch(input, actor) {
   const branchRef = doc(branchesCollection());
   const auditRef = newAuditLogRef();
 
+  // Look up the existing primary outside the transaction. Firestore
+  // transactions can't run a `where` query inline, so we resolve the doc
+  // refs here, then re-read them with `tx.get()` inside the transaction
+  // to enforce the read-before-write ordering rules require.
+  const previousPrimaryRefs = sanitized.isPrimary
+    ? await findPrimaryBranchRefs(branchRef.id)
+    : [];
+  const previousPrimaryAuditRefs = previousPrimaryRefs.map(() => newAuditLogRef());
+
   await runTransaction(db, async (tx) => {
+    // Read previous primaries first so the transaction enforces atomicity.
+    const previousSnaps = [];
+    for (const ref of previousPrimaryRefs) {
+      previousSnaps.push(await tx.get(ref));
+    }
+
     const after = {
       branchId: branchRef.id,
       name: sanitized.name,
       type: sanitized.type,
       address: sanitized.address,
+      phone: sanitized.phone,
       responsibleEmployeeId: sanitized.responsibleEmployeeId,
       isActive: sanitized.isActive,
+      isPrimary: sanitized.isPrimary,
       createdAt: serverTimestamp(),
       createdBy: actor.uid,
       updatedAt: serverTimestamp(),
       updatedBy: actor.uid,
     };
     tx.set(branchRef, after);
+
+    previousSnaps.forEach((snap, i) => {
+      if (!snap.exists()) return;
+      const data = snap.data();
+      if (data.isPrimary !== true) return;
+      tx.update(snap.ref, {
+        isPrimary: false,
+        updatedAt: serverTimestamp(),
+        updatedBy: actor.uid,
+      });
+      tx.set(
+        previousPrimaryAuditRefs[i],
+        buildAuditLog({
+          entity: 'branch',
+          entityId: snap.id,
+          action: 'update',
+          actorUid: actor.uid,
+          actorRole: actor.role,
+          before: auditSnapshot(data),
+          after: { ...auditSnapshot(data), isPrimary: false },
+        })
+      );
+    });
+
     tx.set(
       auditRef,
       buildAuditLog({
@@ -143,6 +192,19 @@ export async function createBranch(input, actor) {
 }
 
 /**
+ * Find the doc refs of every branch currently flagged isPrimary, except
+ * the one supplied via `excludeId`. Runs outside the transaction; the
+ * caller is expected to re-read each ref via `tx.get()` for atomicity.
+ */
+async function findPrimaryBranchRefs(excludeId) {
+  const q = query(branchesCollection(), where('isPrimary', '==', true));
+  const snap = await getDocs(q);
+  return snap.docs
+    .filter((d) => d.id !== excludeId)
+    .map((d) => d.ref);
+}
+
+/**
  * Atomically update a branch and an audit_logs entry.
  * @param {string} id
  * @param {import('@/domain/branches.js').BranchInput} input
@@ -156,17 +218,57 @@ export async function updateBranch(id, input, before, actor) {
   const ref = branchDoc(id);
   const auditRef = newAuditLogRef();
 
+  // Same single-primary invariant as create(): when this update flips a
+  // branch to isPrimary=true, demote whichever other branch is currently
+  // marked primary inside the same transaction.
+  const flippingToPrimary = sanitized.isPrimary === true && before.isPrimary !== true;
+  const previousPrimaryRefs = flippingToPrimary
+    ? await findPrimaryBranchRefs(id)
+    : [];
+  const previousPrimaryAuditRefs = previousPrimaryRefs.map(() => newAuditLogRef());
+
   await runTransaction(db, async (tx) => {
+    const previousSnaps = [];
+    for (const r of previousPrimaryRefs) {
+      previousSnaps.push(await tx.get(r));
+    }
+
     const after = {
       name: sanitized.name,
       type: sanitized.type,
       address: sanitized.address,
+      phone: sanitized.phone,
       responsibleEmployeeId: sanitized.responsibleEmployeeId,
       isActive: sanitized.isActive,
+      isPrimary: sanitized.isPrimary,
       updatedAt: serverTimestamp(),
       updatedBy: actor.uid,
     };
     tx.update(ref, after);
+
+    previousSnaps.forEach((snap, i) => {
+      if (!snap.exists()) return;
+      const data = snap.data();
+      if (data.isPrimary !== true) return;
+      tx.update(snap.ref, {
+        isPrimary: false,
+        updatedAt: serverTimestamp(),
+        updatedBy: actor.uid,
+      });
+      tx.set(
+        previousPrimaryAuditRefs[i],
+        buildAuditLog({
+          entity: 'branch',
+          entityId: snap.id,
+          action: 'update',
+          actorUid: actor.uid,
+          actorRole: actor.role,
+          before: auditSnapshot(data),
+          after: { ...auditSnapshot(data), isPrimary: false },
+        })
+      );
+    });
+
     tx.set(
       auditRef,
       buildAuditLog({

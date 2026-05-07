@@ -5,9 +5,13 @@
   "color": "Color",
   "isFinal": "Final",
   "isAssignable": "Assignable",
-  "in_stock": "In stock",
-  "issued": "Issued",
-  "under_repair": "Under repair",
-  "written_off": "Written off",
-  "lost": "Lost"
+  "sortOrder": "Sort order",
+  "warehouse": "Warehouse",
+  "assigned": "Assigned",
+  "in_repair": "In Repair",
+  "written_off": "Written Off",
+  "disposed": "Disposed",
+  "errorRequired": "This field is required",
+  "errorNameAllLocales": "Fill the name in every language",
+  "errorColorFormat": "Color must be in #rrggbb format"
 }

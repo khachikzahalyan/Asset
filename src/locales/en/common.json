@@ -30,5 +30,22 @@
   "openMenu": "Open menu",
   "closeMenu": "Close menu",
   "navUsers": "Users",
-  "navSidebar": "Sidebar navigation"
+  "navSidebar": "Sidebar navigation",
+  "audit": {
+    "historyTitle": "Change history",
+    "historyEmpty": "No entries yet.",
+    "at": "Date",
+    "action": "Action",
+    "actor": "Actor",
+    "changedFields": "Changes",
+    "actionCreate": "Created",
+    "actionUpdate": "Updated",
+    "actionDeactivate": "Deactivated",
+    "actionActivate": "Activated",
+    "actionReactivate": "Restored",
+    "actionAssign": "Assigned",
+    "actionUnassign": "Unassigned",
+    "actionTransfer": "Transferred",
+    "actionStatusChange": "Status changed"
+  }
 }

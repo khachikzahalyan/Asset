@@ -21,8 +21,14 @@ import { SUPPORTED_LOCALES } from '@/i18n/namespaces.js';
  * @property {BranchName} name
  * @property {'branch'|'warehouse'} type
  * @property {string} address
+ * @property {string|null} phone
  * @property {string|null} responsibleEmployeeId
  * @property {boolean} isActive
+ * @property {boolean} isPrimary
+ *   When true this branch is the organisation's "head office" — it becomes
+ *   the default selection in the employee form. UI is expected to keep at
+ *   most one branch flagged true; if multiple are flagged, consumers pick
+ *   the first one in their existing sort order.
  * @property {import('firebase/firestore').Timestamp} createdAt
  * @property {string} createdBy
  * @property {import('firebase/firestore').Timestamp} updatedAt
@@ -34,8 +40,10 @@ import { SUPPORTED_LOCALES } from '@/i18n/namespaces.js';
  * @property {BranchName} name
  * @property {'branch'|'warehouse'} type
  * @property {string} [address]
+ * @property {string|null} [phone]
  * @property {string|null} [responsibleEmployeeId]
  * @property {boolean} [isActive]
+ * @property {boolean} [isPrimary]
  */
 
 export const BRANCH_TYPES = Object.freeze({
@@ -62,8 +70,10 @@ export function emptyBranchInput() {
     name: emptyBranchName(),
     type: BRANCH_TYPES.BRANCH,
     address: '',
+    phone: null,
     responsibleEmployeeId: null,
     isActive: true,
+    isPrimary: false,
   };
 }
 
@@ -94,11 +104,16 @@ export function sanitizeBranchInput(input) {
     name,
     type: BRANCH_TYPE_LIST.includes(raw.type) ? raw.type : BRANCH_TYPES.BRANCH,
     address: trimOrEmpty(raw.address),
+    phone:
+      isPlainString(raw.phone) && raw.phone.trim().length > 0
+        ? raw.phone.trim()
+        : null,
     responsibleEmployeeId:
       isPlainString(responsible) && responsible.trim().length > 0
         ? responsible.trim()
         : null,
     isActive: raw.isActive === undefined ? true : Boolean(raw.isActive),
+    isPrimary: raw.isPrimary === undefined ? false : Boolean(raw.isPrimary),
   };
 }
 
