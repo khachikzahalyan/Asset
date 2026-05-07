@@ -9,6 +9,7 @@ import ForbiddenPage from '@/pages/ForbiddenPage.jsx';
 import NotFoundPage from '@/pages/NotFoundPage.jsx';
 import BranchListPage from '@/pages/BranchListPage.jsx';
 import BranchDetailPage from '@/pages/BranchDetailPage.jsx';
+import UsersPage from '@/pages/UsersPage.jsx';
 
 import AppShell from '@/components/layout/AppShell.jsx';
 import RequireAuth from '@/components/auth/RequireAuth.jsx';
@@ -61,6 +62,14 @@ export default function App() {
           element={
             <RoleGate roles={[ROLES.EMPLOYEE]}>
               <EmployeeSelfServicePage />
+            </RoleGate>
+          }
+        />
+        <Route
+          path="/users"
+          element={
+            <RoleGate roles={[ROLES.SUPER_ADMIN]}>
+              <UsersPage />
             </RoleGate>
           }
         />

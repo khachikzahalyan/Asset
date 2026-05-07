@@ -1,6 +1,14 @@
 import '@testing-library/jest-dom/vitest';
 import { vi } from 'vitest';
 
+// Set navigator.language to 'ru' so i18next-browser-languagedetector picks up
+// Russian locale in jsdom tests. All assertion strings in tests assume Russian.
+Object.defineProperty(navigator, 'language', {
+  value: 'ru',
+  configurable: true,
+  writable: true,
+});
+
 vi.mock('@/lib/firebase/index.js', () => ({
   app: {},
   auth: { currentUser: null },

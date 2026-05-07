@@ -24,7 +24,7 @@ function inviteDoc(emailLower) {
   return doc(db, COLLECTION, emailLower);
 }
 
-function snapshotToInvite(snap) {
+function _snapshotToInvite(snap) {
   if (!snap.exists()) return null;
   return { ...snap.data() };
 }

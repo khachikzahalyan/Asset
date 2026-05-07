@@ -13,9 +13,9 @@
   "formEmailPlaceholder": "name@gmail.com",
   "formRoleLabel": "Роль",
 
-  "roleSuperAdmin": "Супер-админ",
+  "roleSuperAdmin": "Главный администратор",
   "roleAssetAdmin": "Админ активов",
-  "roleTechAdmin": "Технический админ",
+  "roleTechAdmin": "Тех. админ",
   "roleEmployee": "Сотрудник",
 
   "btnInvite": "Пригласить",
@@ -32,7 +32,7 @@
   "errEmailRequired": "Укажите e-mail.",
   "errEmailInvalid": "Некорректный e-mail.",
   "errRoleRequired": "Выберите роль.",
-  "errLastSuperAdmin": "Нельзя понизить последнего активного супер-админа.",
+  "errLastSuperAdmin": "Защита: нельзя понизить последнего активного super_admin.",
   "errCannotDeactivateSelf": "Нельзя деактивировать самого себя.",
   "errCannotRevokeSelf": "Нельзя отозвать собственное приглашение.",
 

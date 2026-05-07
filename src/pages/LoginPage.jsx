@@ -57,7 +57,7 @@ function mapAuthError(err, t) {
 export default function LoginPage() {
   const { t } = useTranslation('auth');
   const { t: tc } = useTranslation('common');
-  const { user, role, loading, signInWithGoogle, sendEmployeeSignInLink } = useAuth();
+  const { user, role, loading, accountDisabled, signInWithGoogle, sendEmployeeSignInLink } = useAuth();
   const location = useLocation();
 
   const [adminBusy, setAdminBusy] = useState(false);
@@ -126,6 +126,12 @@ export default function LoginPage() {
           </CardHeader>
 
           <CardContent>
+            {accountDisabled ? (
+              <Alert variant="destructive" className="mb-4">
+                <AlertCircle className="h-4 w-4" aria-hidden="true" />
+                <AlertDescription>{t('accountDisabled')}</AlertDescription>
+              </Alert>
+            ) : null}
             <Tabs defaultValue="admin">
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="admin" className="gap-2">

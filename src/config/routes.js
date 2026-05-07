@@ -10,6 +10,7 @@ export const ROUTES = Object.freeze({
   FORBIDDEN: '/403',
   BRANCHES: '/branches',
   BRANCH_DETAIL: '/branches/:id',
+  USERS: '/users',
 });
 
 export function branchDetailPath(id) {
@@ -34,4 +35,5 @@ export const ROUTE_TABLE = [
     allowedRoles: [ROLES.SUPER_ADMIN, ROLES.ASSET_ADMIN],
   },
   { path: ROUTES.ME, allowedRoles: [ROLES.EMPLOYEE] },
+  { path: ROUTES.USERS, allowedRoles: [ROLES.SUPER_ADMIN] },
 ];

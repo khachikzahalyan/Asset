@@ -32,7 +32,7 @@
   "errEmailRequired": "Email is required.",
   "errEmailInvalid": "Invalid email address.",
   "errRoleRequired": "Pick a role.",
-  "errLastSuperAdmin": "You can't demote the last active super admin.",
+  "errLastSuperAdmin": "Cannot demote the last active super_admin.",
   "errCannotDeactivateSelf": "You can't deactivate yourself.",
   "errCannotRevokeSelf": "You can't revoke your own invitation.",
 
@@ -56,7 +56,7 @@
   "actionsRevoke": "Revoke",
 
   "emptyActiveUsers": "No admins yet.",
-  "emptyPendingInvitations": "No pending invitations.",
+  "emptyPendingInvitations": "No invitations pending.",
 
   "confirmDeactivateTitle": "Deactivate user",
   "confirmDeactivateBody": "{{email}} will lose access. You can reactivate them anytime.",

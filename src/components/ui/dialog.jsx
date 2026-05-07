@@ -1,16 +1,18 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 import { cn } from '@/lib/utils.js';
 import { Button } from '@/components/ui/button.jsx';
 
 /**
- * Lightweight modal dialog. Native overlay (no Radix dependency).
+ * Lightweight modal dialog rendered via a portal.
  * Renders nothing when `open` is false.
  *
  * - Closes on Escape and on backdrop click.
- * - Focus is moved to the dialog on open; focus trap is intentionally
- *   minimal for MVP — the form's first input handles initial focus.
+ * - Focus is moved to the dialog on open.
+ * - Adds aria-hidden to body siblings while open (matches Radix behavior,
+ *   required for @testing-library/dom to scope queries to the modal).
  *
  * @param {Object} props
  * @param {boolean} props.open
@@ -33,7 +35,22 @@ export function Dialog({
   closeLabel = 'Close',
 }) {
   const panelRef = useRef(null);
-  const handleClose = onClose ?? (() => onOpenChange?.(false));
+  const containerRef = useRef(null);
+  const handleClose = useCallback(
+    () => (onClose ? onClose() : onOpenChange?.(false)),
+    [onClose, onOpenChange]
+  );
+
+  // Create a dedicated DOM node for the portal
+  useEffect(() => {
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    containerRef.current = el;
+    return () => {
+      document.body.removeChild(el);
+      containerRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -41,17 +58,38 @@ export function Dialog({
       if (e.key === 'Escape') handleClose();
     };
     document.addEventListener('keydown', onKey);
-    panelRef.current?.focus();
-    return () => document.removeEventListener('keydown', onKey);
+    // defer focus so the portal node is rendered
+    const raf = requestAnimationFrame(() => panelRef.current?.focus());
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      cancelAnimationFrame(raf);
+    };
   }, [open, handleClose]);
 
+  // Hide background body children from AT/testing-library while open.
+  useEffect(() => {
+    if (!open) return undefined;
+    const siblings = Array.from(document.body.children).filter(
+      (el) => el !== containerRef.current
+    );
+    const hidden = [];
+    siblings.forEach((el) => {
+      if (!el.hasAttribute('aria-hidden')) {
+        el.setAttribute('aria-hidden', 'true');
+        hidden.push(el);
+      }
+    });
+    return () => {
+      hidden.forEach((el) => el.removeAttribute('aria-hidden'));
+    };
+  }, [open]);
+
+  if (!containerRef.current) return null;
   if (!open) return null;
 
-  // If title/description/footer are passed as flat props (legacy API), render them directly.
-  // When using sub-components, children contains DialogHeader / DialogFooter etc.
   const hasLegacyTitle = Boolean(title);
 
-  return (
+  const modal = (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6"
       role="dialog"
@@ -97,6 +135,8 @@ export function Dialog({
       </div>
     </div>
   );
+
+  return createPortal(modal, containerRef.current);
 }
 
 // ---------------------------------------------------------------------------
@@ -118,7 +158,7 @@ export function DialogHeader({ children, className }) {
 
 export function DialogTitle({ children, className }) {
   return (
-    <h2 id="dialog-title" className={cn('text-lg font-semibold tracking-tight', className)}>
+    <h2 id="dialog-title" className={cn('text-lg font-semibold leading-none tracking-tight', className)}>
       {children}
     </h2>
   );

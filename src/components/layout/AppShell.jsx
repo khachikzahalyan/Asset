@@ -17,6 +17,7 @@ import {
   LogOut,
   Menu,
   X,
+  UserCog,
 } from 'lucide-react';
 
 import LanguageSwitcher from '@/components/common/LanguageSwitcher.jsx';
@@ -36,6 +37,7 @@ const ADMIN_NAV = [
   { to: '/departments', icon: Network, key: 'navDepartments', roles: [ROLES.SUPER_ADMIN, ROLES.ASSET_ADMIN] },
   { to: '/categories', icon: Tags, key: 'navCategories', roles: [ROLES.SUPER_ADMIN, ROLES.ASSET_ADMIN] },
   { to: '/statuses', icon: CircleDot, key: 'navStatuses', roles: [ROLES.SUPER_ADMIN, ROLES.ASSET_ADMIN] },
+  { to: '/users', icon: UserCog, key: 'navUsers', roles: [ROLES.SUPER_ADMIN] },
   { to: '/audit', icon: ScrollText, key: 'navAuditLog', roles: [ROLES.SUPER_ADMIN] },
   { to: '/settings', icon: Settings, key: 'navSettings', roles: [ROLES.SUPER_ADMIN] },
 ];

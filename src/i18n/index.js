@@ -17,11 +17,16 @@ for (const locale of SUPPORTED_LOCALES) {
   }
 }
 
+const isTest = import.meta.env.MODE === 'test';
+
 i18n
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
     resources,
+    // In the test environment force Russian so assertions match the
+    // Russian locale strings (test assertions were written against ru).
+    ...(isTest ? { lng: FALLBACK_LOCALE } : {}),
     fallbackLng: FALLBACK_LOCALE,
     supportedLngs: SUPPORTED_LOCALES,
     ns: NAMESPACE_LIST,
