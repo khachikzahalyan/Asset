@@ -2277,7 +2277,7 @@ Covered by `UsersPage.test.jsx`.
 
 ---
 
-### Task 14: UsersPage + routing + AppShell nav
+### Task 15: UsersPage + routing + AppShell nav
 
 **Subagent role:** react-ui-engineer
 **Files:**
@@ -2837,7 +2837,7 @@ Test-engineer runs the same three commands and reports pass/fail.
 
 ---
 
-### Task 15: i18n — users.json + auth.json + common.json
+### Task 14: i18n — users.json + auth.json + common.json
 
 **Subagent role:** i18n-engineer
 **Files:**
