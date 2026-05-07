@@ -52,18 +52,23 @@ export function Dialog({
     };
   }, []);
 
+  // Focus the panel only on the open=false → open=true transition,
+  // not on every re-render (which steals focus from inputs inside).
+  useEffect(() => {
+    if (!open) return undefined;
+    const raf = requestAnimationFrame(() => panelRef.current?.focus());
+    return () => cancelAnimationFrame(raf);
+  }, [open]);
+
+  // Escape-to-close listener; depends on handleClose identity but
+  // does NOT touch focus.
   useEffect(() => {
     if (!open) return undefined;
     const onKey = (e) => {
       if (e.key === 'Escape') handleClose();
     };
     document.addEventListener('keydown', onKey);
-    // defer focus so the portal node is rendered
-    const raf = requestAnimationFrame(() => panelRef.current?.focus());
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      cancelAnimationFrame(raf);
-    };
+    return () => document.removeEventListener('keydown', onKey);
   }, [open, handleClose]);
 
   // Hide background body children from AT/testing-library while open.

@@ -49,7 +49,7 @@ export default function UsersPage() {
   const [actionError, setActionError] = useState(null);
 
   const activeSuperAdminCount = useMemo(
-    () => users.filter((u) => u.role === ROLES.SUPER_ADMIN && u.isActive === true).length,
+    () => users.filter((u) => u.role === ROLES.SUPER_ADMIN && u.isActive !== false).length,
     [users]
   );
 
@@ -57,9 +57,13 @@ export default function UsersPage() {
     return u.uid === user?.uid;
   }
 
+  function isUserActive(u) {
+    return u.isActive !== false;
+  }
+
   function startToggleActive(target) {
     setConfirmAction({
-      kind: target.isActive ? 'deactivate' : 'reactivate',
+      kind: isUserActive(target) ? 'deactivate' : 'reactivate',
       payload: target,
     });
   }
@@ -146,8 +150,8 @@ export default function UsersPage() {
                       <td className="px-3 py-2 font-medium">{u.email}</td>
                       <td className="px-3 py-2">{t(ROLE_KEY[u.role] ?? 'roleEmployee')}</td>
                       <td className="px-3 py-2">
-                        <Badge variant={u.isActive ? 'default' : 'secondary'}>
-                          {u.isActive ? t('statusActive') : t('statusInactive')}
+                        <Badge variant={isUserActive(u) ? 'default' : 'secondary'}>
+                          {isUserActive(u) ? t('statusActive') : t('statusInactive')}
                         </Badge>
                       </td>
                       <td className="px-3 py-2 text-right">
@@ -163,12 +167,12 @@ export default function UsersPage() {
                           <Button
                             type="button"
                             size="sm"
-                            variant={u.isActive ? 'outline' : 'default'}
+                            variant={isUserActive(u) ? 'outline' : 'default'}
                             disabled={isSelf(u)}
                             title={isSelf(u) ? t('errCannotDeactivateSelf') : undefined}
                             onClick={() => startToggleActive(u)}
                           >
-                            {u.isActive ? t('actionsDeactivate') : t('actionsActivate')}
+                            {isUserActive(u) ? t('actionsDeactivate') : t('actionsActivate')}
                           </Button>
                         </div>
                       </td>
