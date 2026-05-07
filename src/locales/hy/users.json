@@ -1,0 +1,70 @@
+{
+  "usersTitle": "Օգտատերեր",
+  "usersSubtitle": "Ադմինիստրատորներ և հրավերներ",
+
+  "sectionActive": "Ակտիվ օգտատերեր",
+  "sectionPending": "Սպասող հրավերներ",
+
+  "inviteCta": "Հրավիրել ադմինի",
+  "inviteDialogTitle": "Հրավիրել ադմինի",
+  "inviteDialogDescription": "Մուտքագրեք Gmail-ը և ընտրեք դերը: Մուտքը Google-ով:",
+
+  "formEmailLabel": "Էլ. փոստ",
+  "formEmailPlaceholder": "name@gmail.com",
+  "formRoleLabel": "Դեր",
+
+  "roleSuperAdmin": "Գերադմին",
+  "roleAssetAdmin": "Ակտիվների ադմին",
+  "roleTechAdmin": "Տեխ. ադմին",
+  "roleEmployee": "Աշխատակից",
+
+  "btnInvite": "Հրավիրել",
+  "btnInviting": "Ուղարկվում է…",
+  "btnCancel": "Չեղարկել",
+
+  "toastInvited": "Հրավերն ուղարկվեց {{email}}-ին",
+  "toastInviteRevoked": "{{email}}-ի հրավերը հետ կանչվեց",
+  "toastRoleChanged": "{{email}}-ի դերը փոխվեց",
+  "toastDeactivated": "{{email}} օգտատերը ապաակտիվացվեց",
+  "toastActivated": "{{email}} օգտատերը ակտիվացվեց",
+
+  "errInviteExists": "Այս էլ. փոստի համար արդեն կա հրավեր կամ ակտիվ օգտատեր:",
+  "errEmailRequired": "Մուտքագրեք էլ. փոստը:",
+  "errEmailInvalid": "Սխալ էլ. փոստ:",
+  "errRoleRequired": "Ընտրեք դերը:",
+  "errLastSuperAdmin": "Չեք կարող իջեցնել վերջին ակտիվ գերադմինի դերը:",
+  "errCannotDeactivateSelf": "Չեք կարող ապաակտիվացնել ինքներդ Ձեզ:",
+  "errCannotRevokeSelf": "Չեք կարող հետ կանչել Ձեր սեփական հրավերը:",
+
+  "colEmail": "Էլ. փոստ",
+  "colName": "Անուն",
+  "colRole": "Դեր",
+  "colBranch": "Մասնաճյուղ",
+  "colStatus": "Կարգավիճակ",
+  "colCreated": "Ստեղծվել է",
+  "colInvitedBy": "Ով է հրավիրել",
+  "colInvitedAt": "Երբ",
+  "colActions": "Գործողություններ",
+
+  "statusActive": "Ակտիվ",
+  "statusInactive": "Ապաակտիվ",
+  "statusPending": "Սպասում է մուտքին",
+
+  "actionsChangeRole": "Փոխել դերը",
+  "actionsDeactivate": "Ապաակտիվացնել",
+  "actionsActivate": "Ակտիվացնել",
+  "actionsRevoke": "Հետ կանչել",
+
+  "emptyActiveUsers": "Դեռ ադմիններ չկան:",
+  "emptyPendingInvitations": "Սպասող հրավերներ չկան:",
+
+  "confirmDeactivateTitle": "Ապաակտիվացնել օգտատիրոջը",
+  "confirmDeactivateBody": "{{email}}-ը կկորցնի մուտքը: Կարող եք ակտիվացնել նրան ցանկացած պահի:",
+  "confirmActivateTitle": "Ակտիվացնել օգտատիրոջը",
+  "confirmActivateBody": "{{email}}-ը կրկին կունենա մուտք:",
+  "confirmRevokeTitle": "Հետ կանչել հրավերը",
+  "confirmRevokeBody": "{{email}}-ի հրավերը կհետ կանչվի:",
+
+  "roleChangeDialogTitle": "Փոխել դերը",
+  "roleChangeDialogDescription": "Ընտրեք նոր դեր {{email}}-ի համար:"
+}

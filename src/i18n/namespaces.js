@@ -12,6 +12,7 @@ export const NAMESPACES = Object.freeze({
   VALIDATION: 'validation',
   ME: 'me',
   SETTINGS: 'settings',
+  USERS: 'users',
 });
 
 export const NAMESPACE_LIST = Object.values(NAMESPACES);

@@ -1,0 +1,70 @@
+{
+  "usersTitle": "Users",
+  "usersSubtitle": "Administrators and invitations",
+
+  "sectionActive": "Active users",
+  "sectionPending": "Pending invitations",
+
+  "inviteCta": "Invite admin",
+  "inviteDialogTitle": "Invite admin",
+  "inviteDialogDescription": "Enter a Gmail address and pick a role. They'll sign in via Google.",
+
+  "formEmailLabel": "Email",
+  "formEmailPlaceholder": "name@gmail.com",
+  "formRoleLabel": "Role",
+
+  "roleSuperAdmin": "Super admin",
+  "roleAssetAdmin": "Asset admin",
+  "roleTechAdmin": "Tech admin",
+  "roleEmployee": "Employee",
+
+  "btnInvite": "Invite",
+  "btnInviting": "Sending…",
+  "btnCancel": "Cancel",
+
+  "toastInvited": "Invitation sent to {{email}}",
+  "toastInviteRevoked": "Invitation for {{email}} revoked",
+  "toastRoleChanged": "Role for {{email}} changed",
+  "toastDeactivated": "User {{email}} deactivated",
+  "toastActivated": "User {{email}} activated",
+
+  "errInviteExists": "An invitation or active user already exists for this email.",
+  "errEmailRequired": "Email is required.",
+  "errEmailInvalid": "Invalid email address.",
+  "errRoleRequired": "Pick a role.",
+  "errLastSuperAdmin": "You can't demote the last active super admin.",
+  "errCannotDeactivateSelf": "You can't deactivate yourself.",
+  "errCannotRevokeSelf": "You can't revoke your own invitation.",
+
+  "colEmail": "Email",
+  "colName": "Name",
+  "colRole": "Role",
+  "colBranch": "Branch",
+  "colStatus": "Status",
+  "colCreated": "Created",
+  "colInvitedBy": "Invited by",
+  "colInvitedAt": "When",
+  "colActions": "Actions",
+
+  "statusActive": "Active",
+  "statusInactive": "Inactive",
+  "statusPending": "Awaiting sign-in",
+
+  "actionsChangeRole": "Change role",
+  "actionsDeactivate": "Deactivate",
+  "actionsActivate": "Activate",
+  "actionsRevoke": "Revoke",
+
+  "emptyActiveUsers": "No admins yet.",
+  "emptyPendingInvitations": "No pending invitations.",
+
+  "confirmDeactivateTitle": "Deactivate user",
+  "confirmDeactivateBody": "{{email}} will lose access. You can reactivate them anytime.",
+  "confirmActivateTitle": "Activate user",
+  "confirmActivateBody": "{{email}} will regain access.",
+  "confirmRevokeTitle": "Revoke invitation",
+  "confirmRevokeBody": "The invitation for {{email}} will be revoked.",
+
+  "roleChangeDialogTitle": "Change role",
+  "roleChangeDialogDescription": "Pick a new role for {{email}}."
+}

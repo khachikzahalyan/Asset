@@ -1,0 +1,70 @@
+{
+  "usersTitle": "Пользователи",
+  "usersSubtitle": "Администраторы и приглашения",
+
+  "sectionActive": "Активные пользователи",
+  "sectionPending": "Ожидающие приглашения",
+
+  "inviteCta": "Пригласить администратора",
+  "inviteDialogTitle": "Пригласить администратора",
+  "inviteDialogDescription": "Введите Gmail и выберите роль. Пользователь сможет войти через Google.",
+
+  "formEmailLabel": "E-mail",
+  "formEmailPlaceholder": "name@gmail.com",
+  "formRoleLabel": "Роль",
+
+  "roleSuperAdmin": "Супер-админ",
+  "roleAssetAdmin": "Админ активов",
+  "roleTechAdmin": "Технический админ",
+  "roleEmployee": "Сотрудник",
+
+  "btnInvite": "Пригласить",
+  "btnInviting": "Отправляем…",
+  "btnCancel": "Отмена",
+
+  "toastInvited": "Приглашение отправлено для {{email}}",
+  "toastInviteRevoked": "Приглашение для {{email}} отозвано",
+  "toastRoleChanged": "Роль для {{email}} изменена",
+  "toastDeactivated": "Пользователь {{email}} деактивирован",
+  "toastActivated": "Пользователь {{email}} активирован",
+
+  "errInviteExists": "Для этого e-mail уже есть приглашение или активный пользователь.",
+  "errEmailRequired": "Укажите e-mail.",
+  "errEmailInvalid": "Некорректный e-mail.",
+  "errRoleRequired": "Выберите роль.",
+  "errLastSuperAdmin": "Нельзя понизить последнего активного супер-админа.",
+  "errCannotDeactivateSelf": "Нельзя деактивировать самого себя.",
+  "errCannotRevokeSelf": "Нельзя отозвать собственное приглашение.",
+
+  "colEmail": "E-mail",
+  "colName": "Имя",
+  "colRole": "Роль",
+  "colBranch": "Филиал",
+  "colStatus": "Статус",
+  "colCreated": "Создан",
+  "colInvitedBy": "Кто пригласил",
+  "colInvitedAt": "Когда",
+  "colActions": "Действия",
+
+  "statusActive": "Активен",
+  "statusInactive": "Неактивен",
+  "statusPending": "Ожидает входа",
+
+  "actionsChangeRole": "Изменить роль",
+  "actionsDeactivate": "Деактивировать",
+  "actionsActivate": "Активировать",
+  "actionsRevoke": "Отозвать",
+
+  "emptyActiveUsers": "Пока нет администраторов.",
+  "emptyPendingInvitations": "Нет ожидающих приглашений.",
+
+  "confirmDeactivateTitle": "Деактивировать пользователя",
+  "confirmDeactivateBody": "Пользователь {{email}} потеряет доступ. Вы можете активировать его обратно в любой момент.",
+  "confirmActivateTitle": "Активировать пользователя",
+  "confirmActivateBody": "Пользователь {{email}} снова получит доступ.",
+  "confirmRevokeTitle": "Отозвать приглашение",
+  "confirmRevokeBody": "Приглашение для {{email}} будет отозвано.",
+
+  "roleChangeDialogTitle": "Изменить роль",
+  "roleChangeDialogDescription": "Выберите новую роль для {{email}}."
+}
