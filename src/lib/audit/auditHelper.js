@@ -13,6 +13,7 @@ const ALLOWED_ENTITIES = [
   'auth',
   'assignment',
   'settings',
+  'invitation',
 ];
 
 function diffKeys(before, after) {

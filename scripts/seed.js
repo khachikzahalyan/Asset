@@ -127,6 +127,23 @@ async function bootstrapSuperAdmins(auth, db) {
   }
 }
 
+async function backfillIsActive(db) {
+  console.log('\n-> backfilling users.isActive');
+  const snap = await db.collection('users').get();
+  let patched = 0;
+  for (const userSnap of snap.docs) {
+    const data = userSnap.data() ?? {};
+    if (typeof data.isActive === 'boolean') continue;
+    await userSnap.ref.set(
+      { isActive: true, updatedAt: FieldValue.serverTimestamp() },
+      { merge: true }
+    );
+    patched += 1;
+    console.log(`   [+] users/${userSnap.id} -> isActive=true`);
+  }
+  console.log(`   [OK] backfill complete (${patched} doc${patched === 1 ? '' : 's'} patched)`);
+}
+
 async function main() {
   if (getApps().length === 0) {
     initializeApp({ credential: cert(loadServiceAccount()) });
@@ -136,6 +153,7 @@ async function main() {
 
   await writeSettingsAndMeta(db);
   await bootstrapSuperAdmins(auth, db);
+  await backfillIsActive(db);          // NEW
 
   console.log('\n[OK] Seed complete.');
 }

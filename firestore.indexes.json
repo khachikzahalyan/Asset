@@ -138,6 +138,23 @@
         { "fieldPath": "type", "order": "ASCENDING" },
         { "fieldPath": "name.ru", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "userInvitations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status",    "order": "ASCENDING" },
+        { "fieldPath": "invitedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "users",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "role",     "order": "ASCENDING" },
+        { "fieldPath": "email",    "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
