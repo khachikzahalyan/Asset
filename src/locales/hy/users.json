@@ -20,6 +20,8 @@
 
   "btnInvite": "Հրավիրել",
   "btnInviting": "Ուղարկվում է…",
+  "btnSave": "Պահպանել",
+  "btnSaving": "Պահպանվում է…",
   "btnCancel": "Չեղարկել",
 
   "toastInvited": "Հրավերն ուղարկվեց {{email}}-ին",
@@ -66,5 +68,7 @@
   "confirmRevokeBody": "{{email}}-ի հրավերը կհետ կանչվի:",
 
   "roleChangeDialogTitle": "Փոխել դերը",
-  "roleChangeDialogDescription": "Ընտրեք նոր դեր {{email}}-ի համար:"
+  "roleChangeDialogDescription": "Ընտրեք նոր դեր {{email}}-ի համար:",
+
+  "genericError": "Չհաջողվեց կատարել գործողությունը։ Կրկին փորձեք։"
 }

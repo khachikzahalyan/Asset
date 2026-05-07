@@ -87,7 +87,7 @@ export default function AppShell() {
           'fixed inset-y-0 left-0 z-40 w-64 -translate-x-full border-r bg-background transition-transform duration-200 md:static md:translate-x-0',
           mobileOpen && 'translate-x-0'
         )}
-        aria-label={t('navDashboard')}
+        aria-label={t('navSidebar')}
       >
         <div className="flex h-16 items-center justify-between border-b px-5">
           <Link to="/" className="flex items-center gap-2">

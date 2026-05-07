@@ -1,6 +1,7 @@
 // src/components/features/users/ConfirmActionDialog.jsx
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { AlertCircle } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -10,6 +11,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog.jsx';
 import { Button } from '@/components/ui/button.jsx';
+import { Alert, AlertDescription } from '@/components/ui/alert.jsx';
 import { Spinner } from '@/components/ui/spinner.jsx';
 
 /**
@@ -36,27 +38,47 @@ export default function ConfirmActionDialog({
   destructive = false,
 }) {
   const { t } = useTranslation('users');
-  const [busy, setBusy] = useBusy();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
 
   async function handleConfirm() {
     setBusy(true);
+    setError(null);
     try {
       await onConfirm();
       onOpenChange(false);
+    } catch (err) {
+      console.error('[AMS confirm action]', err);
+      setError(t('genericError'));
     } finally {
       setBusy(false);
     }
   }
 
+  function handleOpenChange(nextOpen) {
+    if (!busy) {
+      setError(null);
+      onOpenChange(nextOpen);
+    }
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
+
+        {error ? (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" aria-hidden="true" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        ) : null}
+
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
+          <Button type="button" variant="outline" onClick={() => handleOpenChange(false)} disabled={busy}>
             {t('btnCancel')}
           </Button>
           <Button
@@ -72,9 +94,4 @@ export default function ConfirmActionDialog({
       </DialogContent>
     </Dialog>
   );
-}
-
-function useBusy() {
-  const [busy, setBusy] = useState(false);
-  return [busy, setBusy];
 }

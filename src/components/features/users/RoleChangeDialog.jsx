@@ -124,7 +124,7 @@ export default function RoleChangeDialog({
             </Button>
             <Button type="submit" disabled={busy}>
               {busy ? <Spinner /> : null}
-              {t('btnInvite') /* "Save" reuse — replaced by 'common:save' if available */}
+              {busy ? t('btnSaving') : t('btnSave')}
             </Button>
           </DialogFooter>
         </form>

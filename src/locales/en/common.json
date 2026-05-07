@@ -29,5 +29,6 @@
   "userMenu": "User menu",
   "openMenu": "Open menu",
   "closeMenu": "Close menu",
-  "navUsers": "Users"
+  "navUsers": "Users",
+  "navSidebar": "Sidebar navigation"
 }

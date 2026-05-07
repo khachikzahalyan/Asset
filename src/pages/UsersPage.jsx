@@ -46,6 +46,7 @@ export default function UsersPage() {
   const [roleTarget, setRoleTarget] = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
   // confirmAction shape: { kind: 'deactivate'|'reactivate'|'revoke', payload: ... }
+  const [actionError, setActionError] = useState(null);
 
   const activeSuperAdminCount = useMemo(
     () => users.filter((u) => u.role === ROLES.SUPER_ADMIN && u.isActive === true).length,
@@ -70,14 +71,21 @@ export default function UsersPage() {
   async function runConfirmedAction() {
     if (!confirmAction || !actor) return;
     const { kind, payload } = confirmAction;
-    if (kind === 'deactivate') {
-      await firestoreUsersRepository.setActive(payload.uid, false, payload, actor);
-    } else if (kind === 'reactivate') {
-      await firestoreUsersRepository.setActive(payload.uid, true, payload, actor);
-    } else if (kind === 'revoke') {
-      await firestoreUserInvitationsRepository.revoke(payload.email, payload, actor);
+    try {
+      if (kind === 'deactivate') {
+        await firestoreUsersRepository.setActive(payload.uid, false, payload, actor);
+      } else if (kind === 'reactivate') {
+        await firestoreUsersRepository.setActive(payload.uid, true, payload, actor);
+      } else if (kind === 'revoke') {
+        await firestoreUserInvitationsRepository.revoke(payload.email, payload, actor);
+      }
+      setActionError(null);
+      setConfirmAction(null);
+    } catch (err) {
+      console.error('[AMS confirmed action]', err);
+      setActionError(t('genericError'));
+      throw err;
     }
-    setConfirmAction(null);
   }
 
   return (
@@ -88,6 +96,13 @@ export default function UsersPage() {
           <p className="text-sm text-muted-foreground">{t('usersSubtitle')}</p>
         </div>
       </header>
+
+      {actionError ? (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" aria-hidden="true" />
+          <AlertDescription>{actionError}</AlertDescription>
+        </Alert>
+      ) : null}
 
       {/* Active users */}
       <Card>
@@ -240,7 +255,10 @@ export default function UsersPage() {
       <ConfirmActionDialog
         open={Boolean(confirmAction)}
         onOpenChange={(open) => {
-          if (!open) setConfirmAction(null);
+          if (!open) {
+            setConfirmAction(null);
+            setActionError(null);
+          }
         }}
         title={
           confirmAction?.kind === 'deactivate'

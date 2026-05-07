@@ -20,6 +20,8 @@
 
   "btnInvite": "Invite",
   "btnInviting": "Sending…",
+  "btnSave": "Save",
+  "btnSaving": "Saving…",
   "btnCancel": "Cancel",
 
   "toastInvited": "Invitation sent to {{email}}",
@@ -32,7 +34,7 @@
   "errEmailRequired": "Email is required.",
   "errEmailInvalid": "Invalid email address.",
   "errRoleRequired": "Pick a role.",
-  "errLastSuperAdmin": "Cannot demote the last active super_admin.",
+  "errLastSuperAdmin": "Cannot demote the last active Super Admin.",
   "errCannotDeactivateSelf": "You can't deactivate yourself.",
   "errCannotRevokeSelf": "You can't revoke your own invitation.",
 
@@ -66,5 +68,7 @@
   "confirmRevokeBody": "The invitation for {{email}} will be revoked.",
 
   "roleChangeDialogTitle": "Change role",
-  "roleChangeDialogDescription": "Pick a new role for {{email}}."
+  "roleChangeDialogDescription": "Pick a new role for {{email}}.",
+
+  "genericError": "Action failed. Please try again."
 }
