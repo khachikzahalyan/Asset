@@ -166,4 +166,112 @@ describe('AuthContext invitation bootstrap', () => {
     // runTransaction may not be called.
     expect(runTransaction).not.toHaveBeenCalled();
   });
+
+  // --- Gap-1 additions: 3 missing matrix cases from §11.3 ---
+
+  it('case: seed super_admin first sign-in -> setDoc called, no transaction', async () => {
+    // Arrange: no users/{uid} doc exists yet; setDoc will create it.
+    // Make setDoc update the fixture so the invitation bootstrap sees the doc and
+    // returns early — confirming the invitation path is fully skipped.
+    const { setDoc, runTransaction } = await import('firebase/firestore');
+    setDoc.mockImplementation(async () => {
+      fixture.userDocExists = true;
+      fixture.userDocData = { role: 'super_admin', isActive: true, employeeId: null };
+    });
+
+    renderWithAuthCallback({
+      uid: 'seed-uid',
+      email: 'zahalyanxcho@gmail.com',
+      emailVerified: true,
+      displayName: 'Seed Admin',
+      photoURL: null,
+    });
+
+    // Act + Assert
+    await waitFor(() => {
+      expect(setDoc).toHaveBeenCalledWith(
+        expect.objectContaining({ __path: 'users/seed-uid' }),
+        expect.objectContaining({ role: 'super_admin', isActive: true })
+      );
+    });
+    expect(runTransaction).not.toHaveBeenCalled();
+  });
+
+  it('case: invitee with accepted invite (status=accepted) -> no tx.set, no users/{uid} write', async () => {
+    // Arrange: no users/{uid} doc; invite doc exists but already accepted.
+    fixture.inviteDocExists = true;
+    fixture.inviteDocData = { email: 'vasya@gmail.com', role: 'asset_admin', status: 'accepted' };
+
+    // Capture calls to tx.set within the transaction so we can verify none target users/.
+    let txSetCalls = [];
+    const { runTransaction } = await import('firebase/firestore');
+    runTransaction.mockImplementation(async (_db, fn) => {
+      await fn({
+        get: async (ref) => {
+          if (ref.__path.startsWith('userInvitations/')) {
+            return {
+              exists: () => fixture.inviteDocExists,
+              data: () => fixture.inviteDocData,
+            };
+          }
+          return { exists: () => false };
+        },
+        set: vi.fn((...args) => { txSetCalls.push(args); }),
+        update: vi.fn(),
+      });
+    });
+
+    renderWithAuthCallback({
+      uid: 'vasya-uid',
+      email: 'vasya@gmail.com',
+      emailVerified: true,
+    });
+
+    // Transaction IS called (invitation bootstrap runs) but inner logic must bail out
+    // because status !== 'pending', so tx.set for users/{uid} must never be called.
+    await waitFor(() => {
+      expect(runTransaction).toHaveBeenCalled();
+    });
+    const usersSetCall = txSetCalls.find(
+      ([ref]) => ref?.__path?.startsWith?.('users/')
+    );
+    expect(usersSetCall).toBeUndefined();
+  });
+
+  it('case: invitee with no invite doc at all -> early return; no error; no tx writes', async () => {
+    // Arrange: no users/{uid} doc; no invite doc (inviteDocExists stays false).
+    fixture.inviteDocExists = false;
+
+    let txSetCalls = [];
+    let txUpdateCalls = [];
+    const { runTransaction } = await import('firebase/firestore');
+    runTransaction.mockImplementation(async (_db, fn) => {
+      await fn({
+        get: async (ref) => {
+          if (ref.__path.startsWith('userInvitations/')) {
+            return { exists: () => false, data: () => null };
+          }
+          return { exists: () => false };
+        },
+        set: vi.fn((...args) => { txSetCalls.push(args); }),
+        update: vi.fn((...args) => { txUpdateCalls.push(args); }),
+      });
+    });
+
+    // Should not throw — errors are swallowed via console.warn.
+    expect(() =>
+      renderWithAuthCallback({
+        uid: 'nobody-uid',
+        email: 'nobody@gmail.com',
+        emailVerified: true,
+      })
+    ).not.toThrow();
+
+    // Wait long enough for the async bootstrap to complete.
+    await waitFor(() => {
+      expect(runTransaction).toHaveBeenCalled();
+    });
+    expect(txSetCalls).toHaveLength(0);
+    expect(txUpdateCalls).toHaveLength(0);
+  });
 });

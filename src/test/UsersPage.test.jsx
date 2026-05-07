@@ -130,6 +130,43 @@ describe('UsersPage', () => {
     expect(mockUpdateRole).not.toHaveBeenCalled();
   });
 
+  it('revoke pending invitation: confirm dialog calls repo.revoke with correct args', async () => {
+    const user = userEvent.setup();
+    mockUsers.mockReturnValue({ data: [], loading: false, error: null });
+    const pendingInvite = {
+      email: 'kolya@gmail.com',
+      role: 'tech_admin',
+      status: 'pending',
+      invitedBy: 'super-uid',
+      invitedAt: null,
+    };
+    mockInvitations.mockReturnValue({
+      data: [pendingInvite],
+      loading: false,
+      error: null,
+    });
+    renderPage();
+
+    // Act: click Отозвать on the invitation row.
+    const revokeBtn = screen.getByRole('button', { name: /Отозвать/i });
+    await user.click(revokeBtn);
+
+    // Confirm dialog should now be visible — click the confirm button (also labelled Отозвать).
+    const confirmBtn = await screen.findAllByRole('button', { name: /Отозвать/i });
+    // The dialog footer button is the last one (the first may be the row button if still rendered).
+    const dialogConfirm = confirmBtn[confirmBtn.length - 1];
+    await user.click(dialogConfirm);
+
+    // Assert: revoke called with email, before snapshot, and actor.
+    await waitFor(() => {
+      expect(mockRevokeInvite).toHaveBeenCalledWith(
+        pendingInvite.email,
+        pendingInvite,
+        expect.objectContaining({ uid: 'super-uid', role: 'super_admin' })
+      );
+    });
+  });
+
   it('opens invite dialog and submits a valid invitation', async () => {
     const user = userEvent.setup();
     mockUsers.mockReturnValue({ data: [], loading: false, error: null });
