@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
@@ -35,20 +35,28 @@ export function Dialog({
   closeLabel = 'Close',
 }) {
   const panelRef = useRef(null);
-  const containerRef = useRef(null);
+  // Container is in state so the effect that creates the portal node
+  // triggers a re-render once the node is in the DOM. Without this,
+  // a parent that mounts <Dialog open={true}> on the very first render
+  // would render `null` once and never re-render to fill the portal.
+  const [container, setContainer] = useState(null);
   const handleClose = useCallback(
     () => (onClose ? onClose() : onOpenChange?.(false)),
     [onClose, onOpenChange]
   );
 
-  // Create a dedicated DOM node for the portal
+  // Create a dedicated DOM node for the portal. Tagged with
+  // `data-ams-dialog-portal` so the hide-siblings pass below knows to
+  // leave peer dialog portals visible — required for nested dialogs
+  // (e.g. the inline subtype creator embedded in the asset form).
   useEffect(() => {
     const el = document.createElement('div');
+    el.setAttribute('data-ams-dialog-portal', 'true');
     document.body.appendChild(el);
-    containerRef.current = el;
+    setContainer(el);
     return () => {
       document.body.removeChild(el);
-      containerRef.current = null;
+      setContainer(null);
     };
   }, []);
 
@@ -72,10 +80,15 @@ export function Dialog({
   }, [open, handleClose]);
 
   // Hide background body children from AT/testing-library while open.
+  // Important: peer dialog portals (any element marked with
+  // `data-ams-dialog-portal`) are NOT hidden, so a dialog can host a
+  // nested dialog without rendering it into an aria-hidden subtree.
   useEffect(() => {
     if (!open) return undefined;
     const siblings = Array.from(document.body.children).filter(
-      (el) => el !== containerRef.current
+      (el) =>
+        el !== container &&
+        el.getAttribute('data-ams-dialog-portal') !== 'true'
     );
     const hidden = [];
     siblings.forEach((el) => {
@@ -87,9 +100,9 @@ export function Dialog({
     return () => {
       hidden.forEach((el) => el.removeAttribute('aria-hidden'));
     };
-  }, [open]);
+  }, [open, container]);
 
-  if (!containerRef.current) return null;
+  if (!container) return null;
   if (!open) return null;
 
   const hasLegacyTitle = Boolean(title);
@@ -141,7 +154,7 @@ export function Dialog({
     </div>
   );
 
-  return createPortal(modal, containerRef.current);
+  return createPortal(modal, container);
 }
 
 // ---------------------------------------------------------------------------

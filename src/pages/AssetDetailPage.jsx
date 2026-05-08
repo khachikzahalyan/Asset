@@ -17,8 +17,10 @@ import AssignmentHistoryList from '@/components/features/assignments/AssignmentH
 
 import { useAuth } from '@/contexts/AuthContext.jsx';
 import { useAsset } from '@/hooks/useAsset.js';
+import { useAssets } from '@/hooks/useAssets.js';
 import { useCategories } from '@/hooks/useCategories.js';
 import { useAssetStatuses } from '@/hooks/useAssetStatuses.js';
+import { useAssetSubtypes } from '@/hooks/useAssetSubtypes.js';
 import { useBranches } from '@/hooks/useBranches.js';
 import { useEmployees } from '@/hooks/useEmployees.js';
 import { firestoreAssetRepository } from '@/infra/repositories/firestoreAssetRepository.js';
@@ -48,6 +50,8 @@ export default function AssetDetailPage() {
   const { data: statuses } = useAssetStatuses();
   const { data: branches } = useBranches();
   const { data: employees } = useEmployees();
+  const { data: allAssets } = useAssets();
+  const { all: allSubtypes } = useAssetSubtypes();
 
   const [editOpen, setEditOpen] = useState(false);
   const [statusActing, setStatusActing] = useState(false);
@@ -77,6 +81,15 @@ export default function AssetDetailPage() {
     const id = asset.assignedTo?.id;
     return id ? employees.find((e) => e.employeeId === id) ?? null : null;
   }, [asset, employees]);
+  const subtype = useMemo(() => {
+    if (!asset?.subtypeId) return null;
+    return allSubtypes.find((s) => s.subtypeId === asset.subtypeId) ?? null;
+  }, [asset, allSubtypes]);
+  const assetsById = useMemo(() => {
+    const m = new Map();
+    for (const a of allAssets || []) m.set(a.assetId, a);
+    return m;
+  }, [allAssets]);
 
   // Status options visible in the inline switcher: filter by `isActive`,
   // and constrain by Куда (assignable vs warehouse-side) so the dropdown
@@ -174,6 +187,19 @@ export default function AssetDetailPage() {
     if (kind === ASSIGNMENT_KINDS.DEPARTMENT) {
       return t('holderShortDepartment', { name: asset.assignedTo?.id ?? '—' });
     }
+    if (kind === ASSIGNMENT_KINDS.ASSET) {
+      const targetId = asset.assignedTo?.id;
+      const target = targetId ? assetsById.get(targetId) ?? null : null;
+      const code = target?.inventoryCode ?? targetId ?? '—';
+      if (!targetId) {
+        return t('holderShortAsset', { name: '—' });
+      }
+      return (
+        <Link className="underline" to={`/assets/${targetId}`}>
+          {t('holderShortAsset', { name: code })}
+        </Link>
+      );
+    }
     return '—';
   }
 
@@ -241,6 +267,7 @@ export default function AssetDetailPage() {
             <CardTitle className="text-base">{t('details')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4 text-sm">
+            <WarrantyBanner asset={asset} t={t} locale={lng} />
             <Field label={t('inventoryCode')}>
               <span className="font-mono">{asset.inventoryCode}</span>
             </Field>
@@ -251,6 +278,14 @@ export default function AssetDetailPage() {
               <span className="text-muted-foreground">
                 {category ? localize(category.name, lng) : '—'}
               </span>
+            </Field>
+            <Field label={t('subtype')}>
+              <span className="text-muted-foreground">
+                {subtype ? localize(subtype.name, lng) : '—'}
+              </span>
+            </Field>
+            <Field label={t('condition')}>
+              <ConditionBadge condition={asset.condition} t={t} />
             </Field>
             <Field label={t('status')}>
               <StatusBadge status={status} />
@@ -360,6 +395,67 @@ export default function AssetDetailPage() {
         />
       ) : null}
     </>
+  );
+}
+
+/**
+ * Small green/gray pill summarizing the asset's condition.
+ * Falls back to "new" when the field is missing (legacy rows).
+ */
+function ConditionBadge({ condition, t }) {
+  const isNew = condition !== 'used';
+  const label = isNew ? t('conditionNew') : t('conditionUsed');
+  const cls = isNew
+    ? 'bg-emerald-50 text-emerald-700 ring-emerald-600/20'
+    : 'bg-gray-100 text-gray-700 ring-gray-500/20';
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${cls}`}
+    >
+      {label}
+    </span>
+  );
+}
+
+/**
+ * Banner with the warranty period and a "X days remaining" suffix.
+ * Hidden when the condition is "used" or both warranty dates are missing.
+ */
+function WarrantyBanner({ asset, t, locale }) {
+  if (asset?.condition === 'used') return null;
+  const start = asset?.warrantyStart?.toDate
+    ? asset.warrantyStart.toDate()
+    : asset?.warrantyStart instanceof Date
+      ? asset.warrantyStart
+      : null;
+  const end = asset?.warrantyEnd?.toDate
+    ? asset.warrantyEnd.toDate()
+    : asset?.warrantyEnd instanceof Date
+      ? asset.warrantyEnd
+      : null;
+  if (!start && !end) return null;
+
+  const fmt = (d) =>
+    d
+      ? d.toLocaleDateString(locale, { year: 'numeric', month: '2-digit', day: '2-digit' })
+      : '—';
+  const today = new Date();
+  let suffix = '';
+  if (end) {
+    const msPerDay = 86400000;
+    const days = Math.ceil((end.valueOf() - today.valueOf()) / msPerDay);
+    if (days < 0) {
+      suffix = ` ${t('warrantyExpired')}`;
+    } else {
+      suffix = ` ${t('warrantyRemainingDays', { days })}`;
+    }
+  }
+
+  return (
+    <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm">
+      {t('warrantyBanner', { start: fmt(start), end: fmt(end) })}
+      {suffix}
+    </div>
   );
 }
 

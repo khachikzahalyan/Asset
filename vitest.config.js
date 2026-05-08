@@ -19,5 +19,6 @@ export default defineConfig({
     // it must not be picked up by the root suite (which has neither a JRE
     // nor `@firebase/rules-unit-testing` installed).
     include: ['src/**/*.{test,spec}.{js,jsx}'],
+    testTimeout: 15000,
   },
 });

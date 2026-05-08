@@ -12,22 +12,7 @@ import { COLUMN_KEYS, COLUMN_LABEL_KEYS } from '@/lib/excel/columns.js';
 import { localize } from '@/lib/localize.js';
 import { formatEmployeeName } from '@/domain/employees.js';
 import { ASSIGNMENT_KINDS } from '@/domain/assets.js';
-
-function pad2(n) {
-  return String(n).padStart(2, '0');
-}
-
-/**
- * Format any date-ish value (Firestore Timestamp, plain Date, null) as
- * `yyyy-mm-dd` in UTC. Returns '' for nullish or invalid inputs.
- */
-function isoDateUTC(input) {
-  if (!input) return '';
-  let d = input;
-  if (typeof d.toDate === 'function') d = d.toDate();
-  if (!(d instanceof Date) || Number.isNaN(d.valueOf())) return '';
-  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
-}
+import { isoDateUTC } from '@/lib/format/dateUtc.js';
 
 /**
  * Resolve an asset's `name` into the three locale columns. Single-language

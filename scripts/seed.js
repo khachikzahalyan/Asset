@@ -383,21 +383,24 @@ async function bootstrapAssetStatuses(db, auth) {
 const CATEGORY_SEEDS = [
   {
     id: 'device',
-    nameRu: 'Устройство',
+    name: { ru: 'Устройства', en: 'Devices', hy: 'Սարքեր' },
     inventoryCodePrefix: '400',
-    requiresMultilang: false,
+    requiresMultilang: true,
+    attachableTo: ['branch', 'warehouse', 'employee', 'department'],
   },
   {
     id: 'furniture',
     name: { ru: 'Мебель', en: 'Furniture', hy: 'Կահույք' },
     inventoryCodePrefix: '500',
     requiresMultilang: true,
+    attachableTo: ['branch', 'warehouse', 'employee', 'department'],
   },
   {
     id: 'license',
-    nameRu: 'Лицензии',
+    name: { ru: 'Лицензии', en: 'Licenses', hy: 'Լիցենզիաներ' },
     inventoryCodePrefix: 'LIC',
-    requiresMultilang: false,
+    requiresMultilang: true,
+    attachableTo: ['asset', 'employee'],
   },
 ];
 
@@ -445,6 +448,7 @@ async function bootstrapCategories(db, auth) {
         name,
         inventoryCodePrefix: seed.inventoryCodePrefix,
         requiresMultilang: seed.requiresMultilang,
+        attachableTo: seed.attachableTo,
         isActive: true,
         createdBy: actorUid,
         updatedBy: actorUid,
@@ -467,6 +471,7 @@ async function bootstrapCategories(db, auth) {
           name,
           inventoryCodePrefix: seed.inventoryCodePrefix,
           requiresMultilang: seed.requiresMultilang,
+          attachableTo: seed.attachableTo,
           isActive: true,
         },
         at: FieldValue.serverTimestamp(),

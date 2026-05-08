@@ -23,6 +23,22 @@ const mocks = vi.hoisted(() => ({
   // Fake category and counter shapes used by every test. Reset in beforeEach.
   category: { exists: true, data: { inventoryCodePrefix: '400', isActive: true } },
   counter: { exists: true, data: { next: 5 } },
+  // Wave-A: per-id subtype docs returned by `tx.get(doc(db, 'asset_subtypes', id))`.
+  // Default seeds a generic device-laptop subtype so every existing test
+  // continues to pass without touching its assertions.
+  subtypes: new Map([
+    [
+      'device_laptop',
+      {
+        categoryId: 'device',
+        attachableTo: null,
+        isActive: true,
+        name: 'Laptop',
+      },
+    ],
+  ]),
+  // Wave-A: per-id asset docs (used when assignedTo.kind = 'asset').
+  assets: new Map(),
 }));
 
 vi.mock('firebase/firestore', () => ({
@@ -45,6 +61,7 @@ vi.mock('firebase/firestore', () => ({
       get: vi.fn((ref) => {
         mocks.capturedTx.gets.push(ref);
         const path = Array.isArray(ref?.__ref) ? ref.__ref[0] : null;
+        const id = Array.isArray(ref?.__ref) ? ref.__ref[1] : null;
         if (path === 'categories') {
           return Promise.resolve({
             exists: () => mocks.category.exists,
@@ -56,6 +73,22 @@ vi.mock('firebase/firestore', () => ({
           return Promise.resolve({
             exists: () => mocks.counter.exists,
             data: () => (mocks.counter.exists ? mocks.counter.data : undefined),
+            ref,
+          });
+        }
+        if (path === 'asset_subtypes') {
+          const data = mocks.subtypes.get(id);
+          return Promise.resolve({
+            exists: () => data !== undefined,
+            data: () => data,
+            ref,
+          });
+        }
+        if (path === 'assets') {
+          const data = mocks.assets.get(id);
+          return Promise.resolve({
+            exists: () => data !== undefined,
+            data: () => data,
             ref,
           });
         }
@@ -104,6 +137,19 @@ beforeEach(() => {
   mocks.docCounter = 0;
   mocks.category = { exists: true, data: { inventoryCodePrefix: '400', isActive: true } };
   mocks.counter = { exists: true, data: { next: 5 } };
+  // Reset subtype catalog to the default seed.
+  mocks.subtypes = new Map([
+    [
+      'device_laptop',
+      {
+        categoryId: 'device',
+        attachableTo: null,
+        isActive: true,
+        name: 'Laptop',
+      },
+    ],
+  ]);
+  mocks.assets = new Map();
   auditMocks.newAuditLogRef.mockClear();
   auditMocks.buildAuditLog.mockClear();
   auditMocks.newAuditLogRef.mockImplementation(() => ({ id: 'audit_1' }));
@@ -127,6 +173,7 @@ describe('firestoreAssetRepository', () => {
       const id = await createAsset(
         {
           categoryId: 'device',
+          subtypeId: 'device_laptop',
           name: 'ASUS X550',
           brand: 'ASUS',
           assignedTo: { kind: 'warehouse', id: null },
@@ -188,6 +235,7 @@ describe('firestoreAssetRepository', () => {
       await createAsset(
         {
           categoryId: 'device',
+          subtypeId: 'device_laptop',
           name: 'A',
           assignedTo: { kind: 'warehouse', id: null },
           branchId: 'b',
@@ -203,6 +251,7 @@ describe('firestoreAssetRepository', () => {
       await createAsset(
         {
           categoryId: 'device',
+          subtypeId: 'device_laptop',
           name: 'B',
           assignedTo: { kind: 'warehouse', id: null },
           branchId: 'b',
@@ -224,6 +273,7 @@ describe('firestoreAssetRepository', () => {
         createAsset(
           {
             categoryId: 'device',
+            subtypeId: 'device_laptop',
             name: 'X',
             assignedTo: { kind: 'warehouse', id: null },
             branchId: 'b',
@@ -243,6 +293,7 @@ describe('firestoreAssetRepository', () => {
         createAsset(
           {
             categoryId: 'device',
+            subtypeId: 'device_laptop',
             name: 'X',
             assignedTo: { kind: 'warehouse', id: null },
             branchId: 'b',
@@ -259,6 +310,7 @@ describe('firestoreAssetRepository', () => {
         createAsset(
           {
             categoryId: 'device',
+            subtypeId: 'device_laptop',
             name: 'X',
             assignedTo: { kind: 'warehouse', id: null },
             branchId: 'b',
@@ -442,5 +494,149 @@ describe('firestoreAssetRepository', () => {
       const unsub = subscribeAsset('a_1', vi.fn());
       expect(unsub).toBe(mocks.onSnapshotUnsub);
     });
+  });
+});
+
+describe('firestoreAssetRepository — subtype + condition + warranty + asset-target invariants', () => {
+  it('persists subtypeId, condition, warrantyStart, warrantyEnd on create', async () => {
+    const start = new Date('2026-01-01T00:00:00Z');
+    const end = new Date('2027-01-01T00:00:00Z');
+    const id = await createAsset(
+      {
+        categoryId: 'device',
+        subtypeId: 'device_laptop',
+        name: 'X',
+        assignedTo: { kind: 'warehouse', id: null },
+        branchId: 'b_main',
+        statusId: 'warehouse',
+        condition: 'new',
+        warrantyStart: start,
+        warrantyEnd: end,
+      },
+      { uid: 'u_1', role: 'super_admin' },
+      { category: { requiresMultilang: false } }
+    );
+
+    expect(typeof id).toBe('string');
+
+    const [assetSet, auditSet] = mocks.capturedTx.sets;
+    expect(assetSet.data).toMatchObject({
+      subtypeId: 'device_laptop',
+      condition: 'new',
+      warrantyStart: { __ts: start.valueOf() },
+      warrantyEnd: { __ts: end.valueOf() },
+    });
+
+    expect(auditSet.data.after).toMatchObject({
+      subtypeId: 'device_laptop',
+      condition: 'new',
+    });
+    // Audit snapshot stores Date-equivalents (Date or millis), not Firestore
+    // Timestamps. Assert they round-trip.
+    expect(auditSet.data.after.warrantyStart).toBeTruthy();
+    expect(auditSet.data.after.warrantyEnd).toBeTruthy();
+  });
+
+  it('coerces warranty fields to null when condition is used', async () => {
+    const start = new Date('2026-01-01T00:00:00Z');
+    const end = new Date('2027-01-01T00:00:00Z');
+    await createAsset(
+      {
+        categoryId: 'device',
+        subtypeId: 'device_laptop',
+        name: 'Y',
+        assignedTo: { kind: 'warehouse', id: null },
+        branchId: 'b_main',
+        statusId: 'warehouse',
+        condition: 'used',
+        warrantyStart: start,
+        warrantyEnd: end,
+      },
+      { uid: 'u_1', role: 'super_admin' },
+      { category: { requiresMultilang: false } }
+    );
+
+    const [assetSet] = mocks.capturedTx.sets;
+    expect(assetSet.data.condition).toBe('used');
+    expect(assetSet.data.warrantyStart).toBeNull();
+    expect(assetSet.data.warrantyEnd).toBeNull();
+  });
+
+  it('rejects employee assignment when subtype.attachableTo does not include employee', async () => {
+    // Pre-seed a license-os subtype that only allows attachment to assets.
+    mocks.subtypes.set('license_os', {
+      categoryId: 'license',
+      attachableTo: ['asset'],
+      isActive: true,
+      name: 'Operating System',
+    });
+
+    await expect(
+      createAsset(
+        {
+          categoryId: 'license',
+          subtypeId: 'license_os',
+          name: 'OS license',
+          assignedTo: { kind: 'employee', id: 'emp_1' },
+          statusId: 'warehouse',
+          condition: 'new',
+        },
+        { uid: 'u_1', role: 'super_admin' },
+        { category: { requiresMultilang: false } }
+      )
+    ).rejects.toThrow(/invariant|errorAssignedKindNotAllowed|attachable/i);
+  });
+
+  it('accepts asset-kind assignment for license + valid subtype', async () => {
+    // Pre-seed a license subtype that allows asset + employee.
+    mocks.subtypes.set('license_office_suite', {
+      categoryId: 'license',
+      attachableTo: ['asset', 'employee'],
+      isActive: true,
+      name: 'Office Suite',
+    });
+    // Pre-seed the target device the license attaches to.
+    mocks.assets.set('asset_target', {
+      assetId: 'asset_target',
+      categoryId: 'device',
+      isActive: true,
+    });
+
+    const id = await createAsset(
+      {
+        categoryId: 'license',
+        subtypeId: 'license_office_suite',
+        name: 'Office Pro Plus',
+        assignedTo: { kind: 'asset', id: 'asset_target' },
+        statusId: 'warehouse',
+        condition: 'new',
+      },
+      { uid: 'u_1', role: 'super_admin' },
+      { category: { requiresMultilang: false } }
+    );
+
+    expect(typeof id).toBe('string');
+    const [assetSet] = mocks.capturedTx.sets;
+    expect(assetSet.data.assignedTo).toEqual({ kind: 'asset', id: 'asset_target' });
+    expect(assetSet.data.subtypeId).toBe('license_office_suite');
+  });
+
+  it('rejects when subtype is missing or inactive', async () => {
+    // No 'license_unknown' in mocks.subtypes -> AssetSubtypeInactiveError.
+    await expect(
+      createAsset(
+        {
+          categoryId: 'license',
+          subtypeId: 'license_unknown',
+          name: 'X',
+          assignedTo: { kind: 'warehouse', id: null },
+          branchId: 'b_main',
+          statusId: 'warehouse',
+          condition: 'new',
+        },
+        { uid: 'u_1', role: 'super_admin' },
+        { category: { requiresMultilang: false } }
+      )
+    ).rejects.toThrow(/inactive|missing/i);
   });
 });

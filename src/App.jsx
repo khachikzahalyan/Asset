@@ -14,6 +14,8 @@ import EmployeeDetailPage from '@/pages/EmployeeDetailPage.jsx';
 import AssetListPage from '@/pages/AssetListPage.jsx';
 import AssetDetailPage from '@/pages/AssetDetailPage.jsx';
 import UsersPage from '@/pages/UsersPage.jsx';
+import SubtypeManagementPage from '@/pages/SubtypeManagementPage.jsx';
+import CategoriesManagementPage from '@/pages/CategoriesManagementPage.jsx';
 
 import AppShell from '@/components/layout/AppShell.jsx';
 import RequireAuth from '@/components/auth/RequireAuth.jsx';
@@ -106,6 +108,22 @@ export default function App() {
           element={
             <RoleGate roles={[ROLES.SUPER_ADMIN]}>
               <UsersPage />
+            </RoleGate>
+          }
+        />
+        <Route
+          path="/settings/asset-subtypes"
+          element={
+            <RoleGate roles={[ROLES.SUPER_ADMIN]}>
+              <SubtypeManagementPage />
+            </RoleGate>
+          }
+        />
+        <Route
+          path="/settings/categories"
+          element={
+            <RoleGate roles={[ROLES.SUPER_ADMIN]}>
+              <CategoriesManagementPage />
             </RoleGate>
           }
         />

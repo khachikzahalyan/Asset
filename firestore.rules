@@ -318,6 +318,17 @@ service cloud.firestore {
       return p is string && p.matches('^[A-Z0-9]+$');
     }
 
+    // ПРИВЯЗКА: per-category list of allowed asset-holder kinds. The set
+    // mirrors `ASSIGNMENT_KIND_LIST` in src/domain/assets.js. The array
+    // must be non-empty (the operator must allow at least one kind) and
+    // capped at 5 (one per kind).
+    function isValidAttachableTo(v) {
+      return v is list
+             && v.size() >= 1
+             && v.size() <= 5
+             && v.toSet().hasOnly(['warehouse', 'employee', 'branch', 'department', 'asset']);
+    }
+
     match /categories/{categoryId} {
       allow read: if isAdmin();
 
@@ -325,6 +336,7 @@ service cloud.firestore {
                     && isValidLocaleMap(request.resource.data.name)
                     && isValidInventoryPrefix(request.resource.data.inventoryCodePrefix)
                     && request.resource.data.requiresMultilang is bool
+                    && isValidAttachableTo(request.resource.data.attachableTo)
                     && request.resource.data.isActive is bool
                     && request.resource.data.createdBy == request.auth.uid
                     && request.resource.data.updatedBy == request.auth.uid
@@ -335,13 +347,77 @@ service cloud.firestore {
                     && isValidLocaleMap(request.resource.data.name)
                     && isValidInventoryPrefix(request.resource.data.inventoryCodePrefix)
                     && request.resource.data.requiresMultilang is bool
+                    && isValidAttachableTo(request.resource.data.attachableTo)
                     && request.resource.data.isActive is bool
                     && request.resource.data.createdBy == resource.data.createdBy
                     && request.resource.data.createdAt == resource.data.createdAt
                     && request.resource.data.updatedBy == request.auth.uid
                     && request.resource.data.updatedAt == request.time;
 
-      allow delete: if false;
+      // Wave A.9: hard-delete by super_admin only. The repository performs
+      // a pre-flight count of referencing assets/sub-types and refuses to
+      // delete if either > 0 — referential integrity is enforced at the
+      // application layer (not the rules layer, since rules can't run
+      // aggregate queries). The rules merely gate the role.
+      allow delete: if isSuperAdmin();
+    }
+
+    // ---- asset_subtypes ----
+    // Per-category sub-types (Desk, Laptop, Antivirus, Office Suite, ...).
+    // Read by ANY signed-in user (Wave-A user override 2026-05-07): the
+    // asset-create form needs the dropdown for all admins, and registry
+    // views show sub-type names to all signed-in users. Write by
+    // super_admin only. Soft-deactivate (no hard-delete).
+    //
+    // Detailed contract in docs/superpowers/plans/
+    //   2026-05-07-asset-subtypes-condition-warranty.md, Task 6.
+    function isValidSubtypeName(n) {
+      return n is map
+             && n.keys().hasOnly(['ru', 'en', 'hy'])
+             && n.ru is string
+             && n.en is string
+             && n.hy is string;
+    }
+
+    match /asset_subtypes/{subtypeId} {
+      allow read: if isSignedIn();
+
+      allow create: if isSuperAdmin()
+                    && request.resource.data.keys().hasOnly([
+                         'categoryId', 'name', 'requiresMultilang', 'attachableTo',
+                         'sortOrder', 'isActive',
+                         'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+                       ])
+                    && request.resource.data.categoryId is string
+                    && request.resource.data.categoryId.size() > 0
+                    && isValidSubtypeName(request.resource.data.name)
+                    && request.resource.data.requiresMultilang is bool
+                    && isValidAttachableTo(request.resource.data.attachableTo)
+                    && request.resource.data.sortOrder is int
+                    && request.resource.data.isActive is bool
+                    && request.resource.data.createdBy == request.auth.uid
+                    && request.resource.data.updatedBy == request.auth.uid
+                    && request.resource.data.createdAt == request.time
+                    && request.resource.data.updatedAt == request.time;
+
+      // categoryId, createdAt, createdBy are immutable post-create.
+      // Only `name`, `requiresMultilang`, `attachableTo`, `sortOrder`,
+      // `isActive`, `updatedAt`, `updatedBy` may change.
+      allow update: if isSuperAdmin()
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                       .hasOnly(['name', 'requiresMultilang', 'attachableTo',
+                                 'sortOrder', 'isActive', 'updatedAt', 'updatedBy'])
+                    && isValidSubtypeName(request.resource.data.name)
+                    && request.resource.data.requiresMultilang is bool
+                    && isValidAttachableTo(request.resource.data.attachableTo)
+                    && request.resource.data.sortOrder is int
+                    && request.resource.data.isActive is bool
+                    && request.resource.data.updatedBy == request.auth.uid
+                    && request.resource.data.updatedAt == request.time;
+
+      // Wave A.9: hard-delete by super_admin only. Repository performs the
+      // referential-integrity pre-flight (assets referencing this subtype).
+      allow delete: if isSuperAdmin();
     }
 
     // ---- category_counters ----
@@ -369,7 +445,10 @@ service cloud.firestore {
                     && request.resource.data.diff(resource.data).affectedKeys()
                        .hasOnly(['next', 'updatedAt']);
 
-      allow delete: if false;
+      // Wave A.9: when super_admin deletes the parent category, the matching
+      // counter doc is deleted in the same transaction. Allow super_admin
+      // delete only.
+      allow delete: if isSuperAdmin();
     }
 
     // ---- asset_statuses ----
@@ -455,7 +534,12 @@ service cloud.firestore {
              && (
                   (a.kind == 'warehouse' && a.id == null)
                   || (
-                       (a.kind == 'employee' || a.kind == 'branch' || a.kind == 'department')
+                       (
+                         a.kind == 'employee'
+                         || a.kind == 'branch'
+                         || a.kind == 'department'
+                         || a.kind == 'asset'
+                       )
                        && a.id is string
                        && a.id.size() > 0
                      )
@@ -569,6 +653,22 @@ service cloud.firestore {
                          || request.resource.data.purchasePrice is number
                        )
                     && request.resource.data.isActive is bool
+                    // Wave-A: subtype + condition + warranty (required).
+                    // subtypeId is a foreign key into /asset_subtypes.
+                    && request.resource.data.subtypeId is string
+                    && request.resource.data.subtypeId.size() > 0
+                    && (
+                         request.resource.data.condition == 'new'
+                         || request.resource.data.condition == 'used'
+                       )
+                    && (
+                         request.resource.data.warrantyStart == null
+                         || request.resource.data.warrantyStart is timestamp
+                       )
+                    && (
+                         request.resource.data.warrantyEnd == null
+                         || request.resource.data.warrantyEnd is timestamp
+                       )
                     && request.resource.data.createdBy == request.auth.uid
                     && request.resource.data.updatedBy == request.auth.uid
                     && request.resource.data.createdAt == request.time
@@ -600,6 +700,22 @@ service cloud.firestore {
                          || request.resource.data.purchasePrice is number
                        )
                     && request.resource.data.isActive is bool
+                    // Wave-A: subtypeId mutable (super_admin can fix wrong pick),
+                    // but same shape guards apply. condition + warranty too.
+                    && request.resource.data.subtypeId is string
+                    && request.resource.data.subtypeId.size() > 0
+                    && (
+                         request.resource.data.condition == 'new'
+                         || request.resource.data.condition == 'used'
+                       )
+                    && (
+                         request.resource.data.warrantyStart == null
+                         || request.resource.data.warrantyStart is timestamp
+                       )
+                    && (
+                         request.resource.data.warrantyEnd == null
+                         || request.resource.data.warrantyEnd is timestamp
+                       )
                     && request.resource.data.createdBy == resource.data.createdBy
                     && request.resource.data.createdAt == resource.data.createdAt
                     && request.resource.data.updatedBy == request.auth.uid

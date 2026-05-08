@@ -35,10 +35,12 @@ import {
 import { db } from '@/lib/firebase/index.js';
 import {
   sanitizeAssetInput,
+  validateAssetInput,
   formatInventoryCode,
   AssetCategoryInactiveError,
   AssetCounterMissingError,
 } from '@/domain/assets.js';
+import { AssetSubtypeInactiveError } from '@/domain/assetSubtypes.js';
 import { buildAuditLog, newAuditLogRef } from '@/lib/audit/auditHelper.js';
 
 // ---------------------------------------------------------------------------
@@ -48,6 +50,7 @@ import { buildAuditLog, newAuditLogRef } from '@/lib/audit/auditHelper.js';
 const ASSETS = 'assets';
 const CATEGORIES = 'categories';
 const CATEGORY_COUNTERS = 'category_counters';
+const ASSET_SUBTYPES = 'asset_subtypes';
 
 function assetsCollection() {
   return collection(db, ASSETS);
@@ -63,6 +66,10 @@ function categoryDoc(id) {
 
 function categoryCounterDoc(id) {
   return doc(db, CATEGORY_COUNTERS, id);
+}
+
+function assetSubtypeDoc(id) {
+  return doc(db, ASSET_SUBTYPES, id);
 }
 
 function snapshotToAsset(snap) {
@@ -90,6 +97,7 @@ function auditSnapshot(obj) {
   return {
     inventoryCode: obj.inventoryCode ?? null,
     categoryId: obj.categoryId ?? null,
+    subtypeId: obj.subtypeId ?? null,
     statusId: obj.statusId ?? null,
     name: obj.name ?? null,
     brand: obj.brand ?? null,
@@ -100,6 +108,9 @@ function auditSnapshot(obj) {
     notes: obj.notes ?? null,
     purchaseDate: timestampToMillis(obj.purchaseDate),
     purchasePrice: obj.purchasePrice ?? null,
+    condition: obj.condition ?? null,
+    warrantyStart: timestampToMillis(obj.warrantyStart),
+    warrantyEnd: timestampToMillis(obj.warrantyEnd),
     isActive: obj.isActive ?? null,
   };
 }
@@ -173,14 +184,24 @@ export async function createAsset(input, actor, opts = {}) {
   if (!sanitized.categoryId) {
     throw new Error('createAsset: categoryId required');
   }
+  if (!sanitized.subtypeId) {
+    throw new Error('createAsset: subtypeId required');
+  }
 
   const assetRef = doc(assetsCollection());
   const auditRef = newAuditLogRef();
   const catRef = categoryDoc(sanitized.categoryId);
   const counterRef = categoryCounterDoc(sanitized.categoryId);
+  const subtypeRef = assetSubtypeDoc(sanitized.subtypeId);
 
   const purchaseDateTs = sanitized.purchaseDate
     ? Timestamp.fromDate(sanitized.purchaseDate)
+    : null;
+  const warrantyStartTs = sanitized.warrantyStart
+    ? Timestamp.fromDate(sanitized.warrantyStart)
+    : null;
+  const warrantyEndTs = sanitized.warrantyEnd
+    ? Timestamp.fromDate(sanitized.warrantyEnd)
     : null;
 
   return runTransaction(db, async (tx) => {
@@ -210,6 +231,23 @@ export async function createAsset(input, actor, opts = {}) {
       );
     }
 
+    // Subtype validation — load and check attachableTo invariant.
+    const subtypeSnap = await tx.get(subtypeRef);
+    if (!subtypeSnap.exists() || subtypeSnap.data()?.isActive === false) {
+      throw new AssetSubtypeInactiveError(sanitized.subtypeId);
+    }
+    const subtype = subtypeSnap.data();
+
+    // Re-run domain validator with the loaded subtype context. The form
+    // should have caught this — surface as a generic invariant error.
+    const formErrors = validateAssetInput(sanitized, {
+      category: opts.category ?? null,
+      subtype: { attachableTo: subtype.attachableTo ?? null },
+    });
+    if (Object.keys(formErrors).length > 0) {
+      throw new Error(`asset/invariant: ${JSON.stringify(formErrors)}`);
+    }
+
     const inventoryCode = formatInventoryCode(prefix, next);
 
     // Strict-monotonic-by-one increment — matches firestore.rules.
@@ -222,6 +260,7 @@ export async function createAsset(input, actor, opts = {}) {
       assetId: assetRef.id,
       inventoryCode,
       categoryId: sanitized.categoryId,
+      subtypeId: sanitized.subtypeId,
       statusId: sanitized.statusId,
       name: sanitized.name,
       brand: sanitized.brand,
@@ -232,6 +271,9 @@ export async function createAsset(input, actor, opts = {}) {
       notes: sanitized.notes,
       purchaseDate: purchaseDateTs,
       purchasePrice: sanitized.purchasePrice,
+      condition: sanitized.condition,
+      warrantyStart: warrantyStartTs,
+      warrantyEnd: warrantyEndTs,
       isActive: sanitized.isActive,
       createdAt: serverTimestamp(),
       createdBy: actor.uid,
@@ -253,6 +295,8 @@ export async function createAsset(input, actor, opts = {}) {
           ...sanitized,
           inventoryCode,
           purchaseDate: sanitized.purchaseDate,
+          warrantyStart: sanitized.warrantyStart,
+          warrantyEnd: sanitized.warrantyEnd,
         }),
         relatedAssetId: assetRef.id,
         relatedEmployeeId:
@@ -291,8 +335,42 @@ export async function updateAsset(id, input, before, actor, opts = {}) {
   const purchaseDateTs = sanitized.purchaseDate
     ? Timestamp.fromDate(sanitized.purchaseDate)
     : null;
+  const warrantyStartTs = sanitized.warrantyStart
+    ? Timestamp.fromDate(sanitized.warrantyStart)
+    : null;
+  const warrantyEndTs = sanitized.warrantyEnd
+    ? Timestamp.fromDate(sanitized.warrantyEnd)
+    : null;
+
+  // Subtype invariant must be re-checked when the subtypeId or the
+  // assignedTo target changes (the two factors that drive
+  // `attachableTo` enforcement). If neither changed we trust the
+  // existing invariant.
+  const subtypeIdChanged =
+    sanitized.subtypeId && sanitized.subtypeId !== before.subtypeId;
+  const assignedToChanged =
+    JSON.stringify(sanitized.assignedTo) !== JSON.stringify(before.assignedTo);
+  const needsSubtypeCheck = Boolean(sanitized.subtypeId) && (subtypeIdChanged || assignedToChanged);
+  const subtypeRef = needsSubtypeCheck
+    ? assetSubtypeDoc(sanitized.subtypeId)
+    : null;
 
   await runTransaction(db, async (tx) => {
+    if (subtypeRef) {
+      const subtypeSnap = await tx.get(subtypeRef);
+      if (!subtypeSnap.exists() || subtypeSnap.data()?.isActive === false) {
+        throw new AssetSubtypeInactiveError(sanitized.subtypeId);
+      }
+      const subtype = subtypeSnap.data();
+      const formErrors = validateAssetInput(sanitized, {
+        category: opts.category ?? null,
+        subtype: { attachableTo: subtype.attachableTo ?? null },
+      });
+      if (Object.keys(formErrors).length > 0) {
+        throw new Error(`asset/invariant: ${JSON.stringify(formErrors)}`);
+      }
+    }
+
     const after = {
       // categoryId & inventoryCode & statusId NOT touched here.
       name: sanitized.name,
@@ -304,10 +382,19 @@ export async function updateAsset(id, input, before, actor, opts = {}) {
       notes: sanitized.notes,
       purchaseDate: purchaseDateTs,
       purchasePrice: sanitized.purchasePrice,
+      condition: sanitized.condition,
+      warrantyStart: warrantyStartTs,
+      warrantyEnd: warrantyEndTs,
       isActive: sanitized.isActive,
       updatedAt: serverTimestamp(),
       updatedBy: actor.uid,
     };
+    // Only patch subtypeId when the caller explicitly provided one — mirrors
+    // the existing convention that the patch shape only carries fields the
+    // caller actually wants to change.
+    if (sanitized.subtypeId) {
+      after.subtypeId = sanitized.subtypeId;
+    }
     tx.update(ref, after);
 
     // Compose the audit `after` blob from the merged shape (the immutable
@@ -315,6 +402,7 @@ export async function updateAsset(id, input, before, actor, opts = {}) {
     const mergedAfter = {
       inventoryCode: before.inventoryCode,
       categoryId: before.categoryId,
+      subtypeId: sanitized.subtypeId || before.subtypeId,
       statusId: before.statusId,
       name: sanitized.name,
       brand: sanitized.brand,
@@ -325,6 +413,9 @@ export async function updateAsset(id, input, before, actor, opts = {}) {
       notes: sanitized.notes,
       purchaseDate: sanitized.purchaseDate,
       purchasePrice: sanitized.purchasePrice,
+      condition: sanitized.condition,
+      warrantyStart: sanitized.warrantyStart,
+      warrantyEnd: sanitized.warrantyEnd,
       isActive: sanitized.isActive,
     };
 

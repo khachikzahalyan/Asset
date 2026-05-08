@@ -31,6 +31,7 @@ const categoriesState = {
       name: { ru: 'Устройство', en: 'Device', hy: 'Սարք' },
       inventoryCodePrefix: '400',
       requiresMultilang: false,
+      attachableTo: ['warehouse', 'employee', 'branch', 'department'],
       isActive: true,
     },
     {
@@ -38,6 +39,15 @@ const categoriesState = {
       name: { ru: 'Мебель', en: 'Furniture', hy: 'Կահույք' },
       inventoryCodePrefix: '450',
       requiresMultilang: true,
+      attachableTo: ['warehouse', 'employee', 'branch', 'department'],
+      isActive: true,
+    },
+    {
+      categoryId: 'license',
+      name: { ru: 'Лицензия', en: 'License', hy: 'Լիցենզիա' },
+      inventoryCodePrefix: '300',
+      requiresMultilang: false,
+      attachableTo: ['warehouse', 'asset', 'employee'],
       isActive: true,
     },
   ],
@@ -142,6 +152,126 @@ vi.mock('@/hooks/useEmployees.js', () => ({
   useEmployees: () => employeesState,
 }));
 
+// Wave-A: useAssetSubtypes drives the new sub-type select. The mock takes
+// `{ categoryId }` and returns the catalog filtered to that category. We
+// model two licenses with distinct `attachableTo` arrays to exercise the
+// configurable-holder-kinds invariant.
+const SUBTYPE_BASELINE = vi.hoisted(() => [
+  {
+    subtypeId: 'device_laptop',
+    categoryId: 'cat_device',
+    name: 'Laptop',
+    requiresMultilang: false,
+    attachableTo: [],
+    sortOrder: 1,
+    isActive: true,
+  },
+  {
+    subtypeId: 'device_monitor',
+    categoryId: 'cat_device',
+    name: 'Monitor',
+    requiresMultilang: false,
+    attachableTo: [],
+    sortOrder: 2,
+    isActive: true,
+  },
+  {
+    subtypeId: 'furniture_chair',
+    categoryId: 'cat_furniture',
+    name: { ru: 'Стул', en: 'Chair', hy: 'Աթոռ' },
+    requiresMultilang: true,
+    attachableTo: [],
+    sortOrder: 1,
+    isActive: true,
+  },
+  {
+    subtypeId: 'license_os',
+    categoryId: 'license',
+    name: 'Operating System',
+    requiresMultilang: false,
+    attachableTo: ['asset'],
+    sortOrder: 1,
+    isActive: true,
+  },
+  {
+    subtypeId: 'license_office_suite',
+    categoryId: 'license',
+    name: 'Office Suite',
+    requiresMultilang: false,
+    attachableTo: ['asset', 'employee'],
+    sortOrder: 2,
+    isActive: true,
+  },
+]);
+const subtypeMocks = vi.hoisted(() => ({ all: [] }));
+
+vi.mock('@/hooks/useAssetSubtypes.js', () => ({
+  useAssetSubtypes: ({ categoryId = null, includeInactive = false } = {}) => {
+    let data = subtypeMocks.all;
+    if (categoryId) data = data.filter((s) => s.categoryId === categoryId);
+    if (!includeInactive) data = data.filter((s) => s.isActive !== false);
+    return { data, all: subtypeMocks.all, loading: false, error: null };
+  },
+}));
+
+// Wave A.6: AssetFormDialog now reads role from useAuth() to gate the
+// inline "+ Новый подтип" trigger. Default to super_admin so existing
+// tests continue to render the form without an AuthProvider; individual
+// cases can override via authState.role.
+const authState = vi.hoisted(() => ({
+  user: { uid: 'u_super', email: 'admin@example.com' },
+  role: 'super_admin',
+}));
+vi.mock('@/contexts/AuthContext.jsx', () => ({
+  useAuth: () => authState,
+}));
+
+// Wave A.6: stub the firestore subtype repository — the inline-create
+// flow calls `.create(input, actor, { id })`. Tests assert the call
+// shape; the dialog's own behavior on resolve (auto-select the new
+// subtypeId) is what matters here.
+const subtypeRepoMock = vi.hoisted(() => ({
+  create: vi.fn(),
+}));
+vi.mock('@/infra/repositories/firestoreAssetSubtypeRepository.js', () => ({
+  firestoreAssetSubtypeRepository: subtypeRepoMock,
+}));
+
+// Wave A.7: AssetFormDialog.handleCreateSubtype now ALSO calls
+// firestoreCategoryRepository.create when the operator typed a brand-new
+// category in the SubtypeFormDialog typeahead. Mocked here so the import
+// doesn't pull in firebase. The existing tests in this file always pre-
+// pick an existing category (cat_device / license), so the new-category
+// branch isn't exercised — but the mock has to exist regardless.
+const categoryRepoMock = vi.hoisted(() => ({
+  create: vi.fn().mockResolvedValue(undefined),
+  update: vi.fn(),
+  setActive: vi.fn(),
+  list: vi.fn(),
+  get: vi.fn(),
+}));
+vi.mock('@/infra/repositories/firestoreCategoryRepository.js', () => ({
+  firestoreCategoryRepository: categoryRepoMock,
+}));
+
+// Wave-A: AssetSelect picker for the license-asset target. The
+// component itself doesn't exist yet (Task 11) — provide a stub so the
+// dialog renders deterministically in the meantime.
+vi.mock('@/components/features/assets/AssetSelect.jsx', () => ({
+  default: function AssetSelectStub({ value, onChange, placeholder }) {
+    return (
+      <select
+        data-testid="asset-target-select"
+        value={value ?? ''}
+        onChange={(e) => onChange?.(e.target.value)}
+      >
+        <option value="">{placeholder ?? 'Pick a device'}</option>
+        <option value="asset_target">Target device 400/1</option>
+      </select>
+    );
+  },
+}));
+
 // --- Helpers ------------------------------------------------------------------
 
 function renderDialog(props = {}) {
@@ -163,6 +293,16 @@ function renderDialog(props = {}) {
 beforeEach(async () => {
   vi.clearAllMocks();
   await i18n.changeLanguage('ru');
+  // Reset auth + repo mocks between cases — individual tests may flip role.
+  authState.user = { uid: 'u_super', email: 'admin@example.com' };
+  authState.role = 'super_admin';
+  subtypeRepoMock.create.mockReset();
+  subtypeRepoMock.create.mockResolvedValue('cat_device_tesla');
+  // Refill subtype catalog from baseline so a test that pushes a new row
+  // (Wave A.6 inline-create case) doesn't leak into the next test's
+  // assertions about which subtype options exist.
+  subtypeMocks.all.length = 0;
+  for (const row of SUBTYPE_BASELINE) subtypeMocks.all.push({ ...row });
 });
 
 // Helper: BranchSelect (under warehouse / branch modes) and the radio
@@ -358,6 +498,10 @@ describe('AssetFormDialog', () => {
       screen.getByLabelText(i18n.t('assets:category')),
       'cat_device'
     );
+    await user.selectOptions(
+      screen.getByLabelText(i18n.t('assets:subtype')),
+      'device_laptop'
+    );
     await user.type(
       screen.getByLabelText(i18n.t('assets:name')),
       '  ThinkPad ноутбук  '
@@ -409,6 +553,10 @@ describe('AssetFormDialog', () => {
       screen.getByLabelText(i18n.t('assets:category')),
       'cat_device'
     );
+    await user.selectOptions(
+      screen.getByLabelText(i18n.t('assets:subtype')),
+      'device_laptop'
+    );
     await user.type(screen.getByLabelText(i18n.t('assets:name')), 'X');
     await user.selectOptions(getBranchSelect(), 'b_main');
     await user.click(screen.getByRole('button', { name: i18n.t('common:save') }));
@@ -433,6 +581,10 @@ describe('AssetFormDialog', () => {
     await user.selectOptions(
       screen.getByLabelText(i18n.t('assets:category')),
       'cat_device'
+    );
+    await user.selectOptions(
+      screen.getByLabelText(i18n.t('assets:subtype')),
+      'device_laptop'
     );
     await user.type(screen.getByLabelText(i18n.t('assets:name')), 'X');
     await user.selectOptions(getBranchSelect(), 'b_main');
@@ -459,6 +611,10 @@ describe('AssetFormDialog', () => {
       screen.getByLabelText(i18n.t('assets:category')),
       'cat_device'
     );
+    await user.selectOptions(
+      screen.getByLabelText(i18n.t('assets:subtype')),
+      'device_laptop'
+    );
     await user.type(screen.getByLabelText(i18n.t('assets:name')), 'X');
     await user.selectOptions(getBranchSelect(), 'b_main');
     await user.click(screen.getByRole('button', { name: i18n.t('common:save') }));
@@ -473,6 +629,7 @@ describe('AssetFormDialog', () => {
       assetId: 'a1',
       inventoryCode: '400/5',
       categoryId: 'cat_device',
+      subtypeId: 'device_laptop',
       name: 'ThinkPad',
       brand: 'Lenovo',
       model: 'T14',
@@ -483,6 +640,9 @@ describe('AssetFormDialog', () => {
       notes: null,
       purchaseDate: null,
       purchasePrice: null,
+      condition: 'new',
+      warrantyStart: null,
+      warrantyEnd: null,
       isActive: true,
     };
     renderDialog({ asset });
@@ -495,5 +655,338 @@ describe('AssetFormDialog', () => {
     // categoryId / statusId selects are disabled in edit mode.
     expect(screen.getByLabelText(i18n.t('assets:category'))).toBeDisabled();
     expect(screen.getByLabelText(i18n.t('assets:status'))).toBeDisabled();
+  });
+});
+
+describe('AssetFormDialog — subtype/condition/warranty/license-asset (Wave A)', () => {
+  function renderD(props = {}) {
+    const onClose = vi.fn();
+    const onSubmit = vi.fn(async () => {});
+    const utils = render(
+      <I18nextProvider i18n={i18n}>
+        <AssetFormDialog open onClose={onClose} onSubmit={onSubmit} {...props} />
+      </I18nextProvider>
+    );
+    return { ...utils, onClose, onSubmit };
+  }
+
+  it('subtype select is disabled until a category is picked', () => {
+    renderD();
+    const sel = screen.getByLabelText(i18n.t('assets:subtype'));
+    expect(sel).toBeDisabled();
+  });
+
+  it('after picking category=device, subtype select lists only device sub-types', async () => {
+    const user = userEvent.setup({ delay: null });
+    renderD();
+
+    await user.selectOptions(
+      screen.getByLabelText(i18n.t('assets:category')),
+      'cat_device'
+    );
+
+    const subtypeSel = screen.getByLabelText(i18n.t('assets:subtype'));
+    expect(subtypeSel).not.toBeDisabled();
+    const opts = within(subtypeSel).getAllByRole('option');
+    const values = opts.map((o) => o.getAttribute('value'));
+    expect(values).toContain('device_laptop');
+    expect(values).toContain('device_monitor');
+    expect(values).not.toContain('furniture_chair');
+    expect(values).not.toContain('license_os');
+  });
+
+  it('submitting without a subtype shows errorRequired next to the subtype field', async () => {
+    const user = userEvent.setup({ delay: null });
+    const { onSubmit } = renderD();
+
+    await user.selectOptions(
+      screen.getByLabelText(i18n.t('assets:category')),
+      'cat_device'
+    );
+    await user.type(screen.getByLabelText(i18n.t('assets:name')), 'X');
+    await user.selectOptions(getBranchSelect(), 'b_main');
+    await user.click(screen.getByRole('button', { name: i18n.t('common:save') }));
+
+    // The subtype field renders its own errorRequired message.
+    const subtypeSel = screen.getByLabelText(i18n.t('assets:subtype'));
+    expect(subtypeSel).toHaveAttribute('aria-invalid', 'true');
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('default condition is "new"', () => {
+    renderD();
+    const newRadio = screen.getByRole('radio', { name: i18n.t('assets:conditionNew') });
+    expect(newRadio).toBeChecked();
+    const usedRadio = screen.getByRole('radio', { name: i18n.t('assets:conditionUsed') });
+    expect(usedRadio).not.toBeChecked();
+  });
+
+  it('switching condition to "used" hides the warranty inputs', async () => {
+    const user = userEvent.setup({ delay: null });
+    renderD();
+
+    // Warranty inputs visible by default (condition=new).
+    expect(screen.getByLabelText(i18n.t('assets:warrantyStart'))).toBeInTheDocument();
+    expect(screen.getByLabelText(i18n.t('assets:warrantyEnd'))).toBeInTheDocument();
+
+    await user.click(screen.getByRole('radio', { name: i18n.t('assets:conditionUsed') }));
+
+    expect(screen.queryByLabelText(i18n.t('assets:warrantyStart'))).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(i18n.t('assets:warrantyEnd'))).not.toBeInTheDocument();
+  });
+
+  it('warrantyEnd before warrantyStart shows errorWarrantyEndBeforeStart', async () => {
+    const user = userEvent.setup({ delay: null });
+    const { onSubmit } = renderD();
+
+    await user.selectOptions(
+      screen.getByLabelText(i18n.t('assets:category')),
+      'cat_device'
+    );
+    await user.selectOptions(
+      screen.getByLabelText(i18n.t('assets:subtype')),
+      'device_laptop'
+    );
+    await user.type(screen.getByLabelText(i18n.t('assets:name')), 'X');
+    await user.selectOptions(getBranchSelect(), 'b_main');
+
+    const startInput = screen.getByLabelText(i18n.t('assets:warrantyStart'));
+    const endInput = screen.getByLabelText(i18n.t('assets:warrantyEnd'));
+    await user.type(startInput, '2027-01-01');
+    await user.type(endInput, '2026-01-01');
+
+    await user.click(screen.getByRole('button', { name: i18n.t('common:save') }));
+
+    expect(
+      await screen.findByText(i18n.t('assets:errorWarrantyEndBeforeStart'))
+    ).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('subtype with attachableTo=[asset] shows only the asset radio (auto-selected)', async () => {
+    const user = userEvent.setup({ delay: null });
+    renderD();
+
+    await user.selectOptions(
+      screen.getByLabelText(i18n.t('assets:category')),
+      'license'
+    );
+    await user.selectOptions(
+      screen.getByLabelText(i18n.t('assets:subtype')),
+      'license_os'
+    );
+
+    // Only `asset` is in attachableTo → only that radio is rendered, and
+    // it's auto-checked because it's the single allowed option.
+    const assetRadio = screen.getByRole('radio', { name: i18n.t('assets:holderAsset') });
+    expect(assetRadio).toBeChecked();
+    expect(
+      screen.queryByRole('radio', { name: i18n.t('assets:holderWarehouse') })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('radio', { name: i18n.t('assets:holderEmployee') })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('radio', { name: i18n.t('assets:holderBranch') })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('radio', { name: i18n.t('assets:holderDepartment') })
+    ).not.toBeInTheDocument();
+  });
+
+  it('subtype with attachableTo=[asset,employee] shows asset+employee radios; no warehouse/branch/department', async () => {
+    const user = userEvent.setup({ delay: null });
+    renderD();
+
+    await user.selectOptions(
+      screen.getByLabelText(i18n.t('assets:category')),
+      'license'
+    );
+    await user.selectOptions(
+      screen.getByLabelText(i18n.t('assets:subtype')),
+      'license_office_suite'
+    );
+
+    expect(
+      screen.getByRole('radio', { name: i18n.t('assets:holderEmployee') })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('radio', { name: i18n.t('assets:holderAsset') })
+    ).toBeInTheDocument();
+    // Warehouse, Branch, Department are NOT in attachableTo.
+    expect(
+      screen.queryByRole('radio', { name: i18n.t('assets:holderWarehouse') })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('radio', { name: i18n.t('assets:holderBranch') })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('radio', { name: i18n.t('assets:holderDepartment') })
+    ).not.toBeInTheDocument();
+  });
+
+  it('non-license category does NOT show the asset-target radio', async () => {
+    const user = userEvent.setup({ delay: null });
+    renderD();
+
+    await user.selectOptions(
+      screen.getByLabelText(i18n.t('assets:category')),
+      'cat_device'
+    );
+    expect(
+      screen.queryByRole('radio', { name: i18n.t('assets:holderAsset') })
+    ).not.toBeInTheDocument();
+  });
+
+  it('picking the asset radio renders AssetSelect', async () => {
+    const user = userEvent.setup({ delay: null });
+    renderD();
+
+    await user.selectOptions(
+      screen.getByLabelText(i18n.t('assets:category')),
+      'license'
+    );
+    await user.selectOptions(
+      screen.getByLabelText(i18n.t('assets:subtype')),
+      'license_office_suite'
+    );
+    await user.click(
+      screen.getByRole('radio', { name: i18n.t('assets:holderAsset') })
+    );
+
+    expect(screen.getByTestId('asset-target-select')).toBeInTheDocument();
+  });
+});
+
+describe('AssetFormDialog — inline subtype creation (Wave A.6)', () => {
+  function renderD(props = {}) {
+    const onClose = vi.fn();
+    const onSubmit = vi.fn(async () => {});
+    const utils = render(
+      <I18nextProvider i18n={i18n}>
+        <AssetFormDialog open onClose={onClose} onSubmit={onSubmit} {...props} />
+      </I18nextProvider>
+    );
+    return { ...utils, onClose, onSubmit };
+  }
+
+  it('shows the "+ Добавить категорию" button for super_admin (next to the subtype select) (Wave A.7)', () => {
+    authState.role = 'super_admin';
+    renderD();
+
+    const btn = screen.getByRole('button', {
+      name: new RegExp(i18n.t('assets:addCategory'), 'i'),
+    });
+    expect(btn).toBeInTheDocument();
+    // It lives next to the subtype select inside the same flex row.
+    const subtypeSel = screen.getByLabelText(i18n.t('assets:subtype'));
+    expect(subtypeSel.parentElement).toContainElement(btn);
+  });
+
+  it('hides the "+ Добавить категорию" button for tech_admin and asset_admin (Wave A.7)', () => {
+    authState.role = 'tech_admin';
+    const { unmount } = renderD();
+    expect(
+      screen.queryByRole('button', {
+        name: new RegExp(i18n.t('assets:addCategory'), 'i'),
+      })
+    ).not.toBeInTheDocument();
+    unmount();
+
+    authState.role = 'asset_admin';
+    renderD();
+    expect(
+      screen.queryByRole('button', {
+        name: new RegExp(i18n.t('assets:addCategory'), 'i'),
+      })
+    ).not.toBeInTheDocument();
+  });
+
+  it('clicking the button opens SubtypeFormDialog with category prefilled from typeahead; on success the asset form auto-selects the new subtype (Wave A.7)', async () => {
+    authState.role = 'super_admin';
+    // Stub the repository so the create call resolves with the new id and
+    // also pushes a matching row into the mock subtype catalog. This
+    // simulates the live `useAssetSubtypes` snapshot delivering the new
+    // subtype shortly after the write — the asset form needs an
+    // `<option value=...>` to actually display the auto-selected id.
+    const newId = 'cat_device_tesla';
+    subtypeRepoMock.create.mockImplementation(async () => {
+      subtypeMocks.all.push({
+        subtypeId: newId,
+        categoryId: 'cat_device',
+        name: 'Tesla',
+        requiresMultilang: false,
+        attachableTo: null,
+        sortOrder: Date.now(),
+        isActive: true,
+      });
+      return newId;
+    });
+
+    const user = userEvent.setup({ delay: null });
+    renderD();
+
+    // Pick a category first so the inline-create button enables and the
+    // nested dialog has a default categoryId to seed.
+    await user.selectOptions(
+      screen.getByLabelText(i18n.t('assets:category')),
+      'cat_device'
+    );
+
+    // Click the inline trigger (Wave A.7: label is now "Добавить категорию").
+    const trigger = screen.getByRole('button', {
+      name: new RegExp(i18n.t('assets:addCategory'), 'i'),
+    });
+    await user.click(trigger);
+
+    // The nested SubtypeFormDialog mounts in locked-category mode (the
+    // asset form passes a defaultCategoryId): the category is baked into
+    // the dialog title and the typeahead is suppressed so the operator
+    // can't accidentally re-target the new sub-type to a different category.
+    const nestedHeading = await screen.findByRole('heading', {
+      name: i18n.t('assets:subtypeAdminDialogCreateInCategoryTitle', {
+        name: 'Устройство',
+      }),
+    });
+    expect(nestedHeading).toBeInTheDocument();
+    expect(document.getElementById('subtype-category')).toBeNull();
+
+    // Type a name and save the nested dialog. Scope the textbox lookup
+    // to the nested dialog's panel — both dialogs have a `name="name"`
+    // input and a top-level getAllByRole would match both.
+    const nestedPanel = nestedHeading.closest('[role="dialog"]');
+    expect(nestedPanel).toBeTruthy();
+    const nestedNameInput = within(nestedPanel)
+      .getAllByRole('textbox')
+      .find((el) => el.getAttribute('name') === 'name' && !el.readOnly);
+    expect(nestedNameInput).toBeTruthy();
+    await user.type(nestedNameInput, 'Tesla');
+    // Wave-A: the nested SubtypeFormDialog now requires picking at least one
+    // allowed holder kind. The seeded category is `cat_device` whose
+    // `attachableTo` array is the four non-asset kinds — pick `branch`.
+    const nestedBranchCheckbox = within(nestedPanel).getByRole('checkbox', {
+      name: i18n.t('assets:assignmentKindBranch'),
+    });
+    await user.click(nestedBranchCheckbox);
+    await user.click(
+      within(nestedPanel).getByRole('button', {
+        name: i18n.t('assets:subtypeAdminSave'),
+      })
+    );
+
+    // The repository was invoked with the slug-derived id (existing-category
+    // mode → no `newCategory` payload should be passed).
+    await waitFor(() => {
+      expect(subtypeRepoMock.create).toHaveBeenCalledTimes(1);
+    });
+    const [, actor, opts] = subtypeRepoMock.create.mock.calls[0];
+    expect(actor).toEqual({ uid: 'u_super', role: 'super_admin' });
+    expect(opts.id).toBe(newId);
+
+    // After resolution, the asset form's subtype select reflects the new id.
+    const subtypeSel = screen.getByLabelText(i18n.t('assets:subtype'));
+    await waitFor(() => {
+      expect(subtypeSel).toHaveValue(newId);
+    });
   });
 });

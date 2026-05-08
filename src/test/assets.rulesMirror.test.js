@@ -49,10 +49,29 @@ function isValidAssignedTo(a) {
   if (a.kind === 'warehouse') {
     return a.id === null;
   }
-  if (a.kind === 'employee' || a.kind === 'branch' || a.kind === 'department') {
+  if (
+    a.kind === 'employee'
+    || a.kind === 'branch'
+    || a.kind === 'department'
+    || a.kind === 'asset'
+  ) {
     return typeof a.id === 'string' && a.id.length > 0;
   }
   return false;
+}
+
+// Mirror of `is timestamp` in Firestore rules. In our mirror we treat
+// either a Date instance or an opaque "TIMESTAMP_*" sentinel string as
+// a valid timestamp for predicate purposes.
+function isTimestampOrNull(v) {
+  if (v === null) return true;
+  if (v instanceof Date) return true;
+  if (typeof v === 'string' && v.startsWith('TIMESTAMP_')) return true;
+  return false;
+}
+
+function mockTimestamp(d) {
+  return `TIMESTAMP_${d.toISOString()}`;
 }
 
 function isValidAssetName(n) {
@@ -94,6 +113,11 @@ function canCreateAsset({ auth, users, requestData, requestTime }) {
   if (!(requestData.notes === null || typeof requestData.notes === 'string')) return false;
   if (!(requestData.purchasePrice === null || typeof requestData.purchasePrice === 'number')) return false;
   if (typeof requestData.isActive !== 'boolean') return false;
+  // Wave-A new fields (subtype + condition + warranty).
+  if (typeof requestData.subtypeId !== 'string' || requestData.subtypeId.length === 0) return false;
+  if (requestData.condition !== 'new' && requestData.condition !== 'used') return false;
+  if (!isTimestampOrNull(requestData.warrantyStart)) return false;
+  if (!isTimestampOrNull(requestData.warrantyEnd)) return false;
   if (requestData.createdBy !== auth.uid) return false;
   if (requestData.updatedBy !== auth.uid) return false;
   if (requestData.createdAt !== requestTime) return false;
@@ -117,6 +141,12 @@ function canUpdateAsset({ auth, users, before, requestData, requestTime }) {
   if (!(requestData.notes === null || typeof requestData.notes === 'string')) return false;
   if (!(requestData.purchasePrice === null || typeof requestData.purchasePrice === 'number')) return false;
   if (typeof requestData.isActive !== 'boolean') return false;
+  // Wave-A new fields. subtypeId stays mutable (super_admin can fix a wrong pick)
+  // but the same shape guards apply.
+  if (typeof requestData.subtypeId !== 'string' || requestData.subtypeId.length === 0) return false;
+  if (requestData.condition !== 'new' && requestData.condition !== 'used') return false;
+  if (!isTimestampOrNull(requestData.warrantyStart)) return false;
+  if (!isTimestampOrNull(requestData.warrantyEnd)) return false;
   if (requestData.createdBy !== before.createdBy) return false;
   if (requestData.createdAt !== before.createdAt) return false;
   if (requestData.updatedBy !== auth.uid) return false;
@@ -153,6 +183,11 @@ function validAssetCreate(actorUid) {
     purchaseDate: null,
     purchasePrice: null,
     isActive: true,
+    // Wave-A: subtype + condition + warranty are required on every asset write.
+    subtypeId: 'device_laptop',
+    condition: 'new',
+    warrantyStart: null,
+    warrantyEnd: null,
     createdBy: actorUid,
     updatedBy: actorUid,
     createdAt: REQ_TIME,
@@ -705,5 +740,226 @@ describe('rules mirror — /assets delete', () => {
     ['anonymous', null],
   ])('%s denied', () => {
     expect(canDeleteAsset()).toBe(false);
+  });
+});
+
+// -------------------------------------------------------------------------
+// Wave-A extensions: extended assignedTo + new asset fields.
+// Mirrors the shape changes in firestore.rules:
+//   - isValidAssignedTo gains an `asset` kind branch.
+//   - /assets create + update predicates require subtypeId, condition,
+//     warrantyStart, warrantyEnd.
+// -------------------------------------------------------------------------
+describe('rules mirror — extended assignedTo + new asset fields', () => {
+  it('isValidAssignedTo accepts asset kind with non-empty id', () => {
+    expect(isValidAssignedTo({ kind: 'asset', id: 'host_device_1' })).toBe(true);
+  });
+
+  it('isValidAssignedTo rejects asset kind with empty id', () => {
+    expect(isValidAssignedTo({ kind: 'asset', id: '' })).toBe(false);
+  });
+
+  it('isValidAssignedTo rejects asset kind with null id', () => {
+    expect(isValidAssignedTo({ kind: 'asset', id: null })).toBe(false);
+  });
+
+  it('isValidAssignedTo still rejects unknown kind', () => {
+    expect(isValidAssignedTo({ kind: 'cosmos', id: 'x' })).toBe(false);
+  });
+
+  it('canCreateAsset accepts asset assignedTo (license attached to a device)', () => {
+    expect(
+      canCreateAsset({
+        auth: asAuth('asset_uid'),
+        users,
+        requestData: {
+          ...validAssetCreate('asset_uid'),
+          assignedTo: { kind: 'asset', id: 'host_device_1' },
+        },
+        requestTime: REQ_TIME,
+      })
+    ).toBe(true);
+  });
+
+  it('canCreateAsset rejects missing subtypeId', () => {
+    const data = validAssetCreate('super_uid');
+    delete data.subtypeId;
+    expect(
+      canCreateAsset({
+        auth: asAuth('super_uid'),
+        users,
+        requestData: data,
+        requestTime: REQ_TIME,
+      })
+    ).toBe(false);
+  });
+
+  it('canCreateAsset rejects empty subtypeId', () => {
+    expect(
+      canCreateAsset({
+        auth: asAuth('super_uid'),
+        users,
+        requestData: { ...validAssetCreate('super_uid'), subtypeId: '' },
+        requestTime: REQ_TIME,
+      })
+    ).toBe(false);
+  });
+
+  it('canCreateAsset accepts new condition with both warranty timestamps', () => {
+    expect(
+      canCreateAsset({
+        auth: asAuth('asset_uid'),
+        users,
+        requestData: {
+          ...validAssetCreate('asset_uid'),
+          condition: 'new',
+          warrantyStart: mockTimestamp(new Date('2026-05-07')),
+          warrantyEnd: mockTimestamp(new Date('2027-05-07')),
+        },
+        requestTime: REQ_TIME,
+      })
+    ).toBe(true);
+  });
+
+  it('canCreateAsset accepts used condition with null warranty', () => {
+    expect(
+      canCreateAsset({
+        auth: asAuth('asset_uid'),
+        users,
+        requestData: {
+          ...validAssetCreate('asset_uid'),
+          condition: 'used',
+          warrantyStart: null,
+          warrantyEnd: null,
+        },
+        requestTime: REQ_TIME,
+      })
+    ).toBe(true);
+  });
+
+  it('canCreateAsset rejects unknown condition', () => {
+    expect(
+      canCreateAsset({
+        auth: asAuth('asset_uid'),
+        users,
+        requestData: { ...validAssetCreate('asset_uid'), condition: 'broken' },
+        requestTime: REQ_TIME,
+      })
+    ).toBe(false);
+  });
+
+  it('canCreateAsset rejects empty condition', () => {
+    expect(
+      canCreateAsset({
+        auth: asAuth('asset_uid'),
+        users,
+        requestData: { ...validAssetCreate('asset_uid'), condition: '' },
+        requestTime: REQ_TIME,
+      })
+    ).toBe(false);
+  });
+
+  it('canCreateAsset rejects non-timestamp warrantyStart', () => {
+    expect(
+      canCreateAsset({
+        auth: asAuth('asset_uid'),
+        users,
+        requestData: {
+          ...validAssetCreate('asset_uid'),
+          warrantyStart: 'not-a-timestamp',
+        },
+        requestTime: REQ_TIME,
+      })
+    ).toBe(false);
+  });
+
+  it('canCreateAsset rejects non-timestamp warrantyEnd', () => {
+    expect(
+      canCreateAsset({
+        auth: asAuth('asset_uid'),
+        users,
+        requestData: {
+          ...validAssetCreate('asset_uid'),
+          warrantyEnd: 12345,
+        },
+        requestTime: REQ_TIME,
+      })
+    ).toBe(false);
+  });
+
+  it('canUpdateAsset allows subtypeId to change (super_admin can fix wrong pick)', () => {
+    const before = existingAssetDoc('super_uid');
+    const after = {
+      ...before,
+      subtypeId: 'device_workstation',
+      updatedBy: 'super_uid',
+      updatedAt: REQ_TIME,
+    };
+    expect(
+      canUpdateAsset({
+        auth: asAuth('super_uid'),
+        users,
+        before,
+        requestData: after,
+        requestTime: REQ_TIME,
+      })
+    ).toBe(true);
+  });
+
+  it('canUpdateAsset rejects empty subtypeId', () => {
+    const before = existingAssetDoc('super_uid');
+    const after = {
+      ...before,
+      subtypeId: '',
+      updatedBy: 'super_uid',
+      updatedAt: REQ_TIME,
+    };
+    expect(
+      canUpdateAsset({
+        auth: asAuth('super_uid'),
+        users,
+        before,
+        requestData: after,
+        requestTime: REQ_TIME,
+      })
+    ).toBe(false);
+  });
+
+  it('canUpdateAsset accepts condition flip from new -> used', () => {
+    const before = existingAssetDoc('super_uid');
+    const after = {
+      ...before,
+      condition: 'used',
+      updatedBy: 'super_uid',
+      updatedAt: REQ_TIME,
+    };
+    expect(
+      canUpdateAsset({
+        auth: asAuth('super_uid'),
+        users,
+        before,
+        requestData: after,
+        requestTime: REQ_TIME,
+      })
+    ).toBe(true);
+  });
+
+  it('canUpdateAsset rejects unknown condition', () => {
+    const before = existingAssetDoc('super_uid');
+    const after = {
+      ...before,
+      condition: 'rotten',
+      updatedBy: 'super_uid',
+      updatedAt: REQ_TIME,
+    };
+    expect(
+      canUpdateAsset({
+        auth: asAuth('super_uid'),
+        users,
+        before,
+        requestData: after,
+        requestTime: REQ_TIME,
+      })
+    ).toBe(false);
   });
 });

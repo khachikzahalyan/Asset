@@ -9,11 +9,12 @@
  * so the category doc and its `audit_logs/{logId}` companion either both
  * succeed or both roll back.
  *
- * Counter docs (`category_counters/{categoryId}`): NOT touched by this
- * repository. The counter is initialized at seed time (once per category)
- * and incremented by the asset-create flow inside the same transaction
- * that writes the asset. Keeping the touchpoints separate keeps this
- * repository focused on metadata.
+ * Counter docs (`category_counters/{categoryId}`): for UI-driven category
+ * creation the counter is initialized inside the SAME transaction that
+ * writes the category doc, so the asset-create flow always finds an
+ * incrementable counter. This was added in Wave A.5 — see the brief in
+ * docs/superpowers/plans/. Update / setActive flows do NOT touch the
+ * counter (re-initializing on edit would erase the running asset numbers).
  *
  * @module infra/repositories/firestoreCategoryRepository
  */
@@ -21,15 +22,22 @@
 import {
   collection,
   doc,
+  getCountFromServer,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
   runTransaction,
   serverTimestamp,
+  where,
 } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase/index.js';
-import { sanitizeCategoryInput } from '@/domain/categories.js';
+import {
+  sanitizeCategoryInput,
+  CategoryIdConflictError,
+  CategoryReferencedError,
+} from '@/domain/categories.js';
 import { buildAuditLog, newAuditLogRef } from '@/lib/audit/auditHelper.js';
 
 const COLLECTION = 'categories';
@@ -40,6 +48,10 @@ function categoriesCollection() {
 
 function categoryDoc(id) {
   return doc(db, COLLECTION, id);
+}
+
+function categoryCounterDoc(id) {
+  return doc(db, 'category_counters', id);
 }
 
 /**
@@ -109,11 +121,19 @@ export function subscribeCategory(id, onData, onError) {
 }
 
 /**
- * Atomically create a category and an audit_logs entry.
+ * Atomically create a category, initialize its `category_counters/{id}`
+ * doc to `{ next: 1 }`, and write two audit_logs entries (`create` for the
+ * category, `counter_initialized` for the counter). All four writes share
+ * a single `runTransaction()` so a partial create can never leave the
+ * asset-create flow without an incrementable counter.
  *
- * Note: callers may pass an explicit `id` to align the doc id with the
- * stable code identifier (e.g. seed bootstrap uses `device`, `furniture`,
- * `license`). When `id` is omitted Firestore auto-allocates one.
+ * Callers may pass an explicit `id` to align the doc id with a stable
+ * code identifier. The seed bootstrap uses `device`, `furniture`,
+ * `license`; the Settings UI passes a slug derived from the RU name and
+ * appends a numeric suffix on collision before calling this function.
+ * When `id` is omitted Firestore auto-allocates one.
+ *
+ * Throws `CategoryIdConflictError` if the requested doc id already exists.
  *
  * @param {import('@/domain/categories.js').CategoryInput} input
  * @param {{ uid: string, role: string }} actor
@@ -126,9 +146,22 @@ export async function createCategory(input, actor, options = {}) {
   const categoryRef = options.id
     ? categoryDoc(options.id)
     : doc(categoriesCollection());
+  const counterRef = categoryCounterDoc(categoryRef.id);
   const auditRef = newAuditLogRef();
+  const counterAuditRef = newAuditLogRef();
 
   await runTransaction(db, async (tx) => {
+    // Stable-id collision check: if the caller asked for a specific id
+    // and a doc already lives there, fail loudly. The Settings UI catches
+    // this and either auto-suffixes the slug client-side or surfaces the
+    // i18n error so the operator knows.
+    if (options.id) {
+      const existing = await tx.get(categoryRef);
+      if (existing.exists?.()) {
+        throw new CategoryIdConflictError(categoryRef.id);
+      }
+    }
+
     const after = {
       categoryId: categoryRef.id,
       name: sanitized.name,
@@ -152,6 +185,28 @@ export async function createCategory(input, actor, options = {}) {
         actorRole: actor.role,
         before: null,
         after: auditSnapshot(sanitized),
+      })
+    );
+
+    // Initialize the matching `category_counters/{id}` doc so the
+    // asset-create flow has something to increment, and write a
+    // `counter_initialized` audit row mirroring the bootstrap behavior in
+    // StatusesAndCategoriesBootstrap.ensureCategoryCounter.
+    tx.set(counterRef, {
+      next: 1,
+      updatedAt: serverTimestamp(),
+    });
+
+    tx.set(
+      counterAuditRef,
+      buildAuditLog({
+        entity: 'category',
+        entityId: categoryRef.id,
+        action: 'counter_initialized',
+        actorUid: actor.uid,
+        actorRole: actor.role,
+        before: null,
+        after: { next: 1 },
       })
     );
   });
@@ -245,6 +300,146 @@ export async function setCategoryActive(id, isActive, before, actor) {
 }
 
 /**
+ * Hard-delete a category along with its `category_counters/{id}` doc and
+ * cascade-delete every sub-type that belongs to the category.
+ *
+ * Pre-flight: count assets where `categoryId == id`. If > 0 throw
+ * CategoryReferencedError — assets carry real inventory data and silently
+ * orphaning their categoryId would corrupt history. Sub-types are NOT a
+ * blocker: they are catalog rows that get deleted alongside their parent
+ * category in the same transaction (operator request 2026-05-08).
+ *
+ * The pre-flight + the subtype list query both run OUTSIDE the
+ * transaction because Firestore client-side transactions can't run
+ * aggregate counts or arbitrary queries. We accept the small race
+ * window: a concurrent subtype create racing the delete would leave an
+ * orphan subtype after the txn, recoverable from audit history. See
+ * CategoryReferencedError docstring.
+ *
+ * Inside `runTransaction`: for each subtype found in the pre-flight
+ * query, `tx.delete(subtypeRef)` and `tx.set(auditRef, ...)` with
+ * `meta: { cascadeFromCategory: id }` so the audit trail records the
+ * cascade clearly. Then `tx.delete(category)`, `tx.delete(counter)`,
+ * and a final `tx.set(...)` for the category's own deletion audit row.
+ *
+ * Transaction write budget: Firestore allows up to 500 writes per
+ * transaction. Each subtype consumes 2 writes (delete + audit), the
+ * category itself consumes 3 (delete + counter delete + audit). So the
+ * hard cap is ~248 subtypes per category. Phase 1 categories have a few
+ * dozen subtypes at most; we don't paginate.
+ *
+ * Server-side enforcement: `firestore.rules` permits delete on
+ * `/categories/{id}`, `/category_counters/{id}`, and
+ * `/asset_subtypes/{id}` for super_admin only.
+ *
+ * @param {string} id
+ * @param {import('@/domain/categories.js').Category} before
+ * @param {{ uid: string, role: string }} actor
+ * @throws {CategoryReferencedError} when at least one asset references the
+ *   category. Sub-types do NOT raise this error — they cascade.
+ */
+export async function deleteCategory(id, before, actor) {
+  if (!actor?.uid) throw new Error('deleteCategory: actor.uid required');
+  if (!before) {
+    throw new Error('deleteCategory: before snapshot required for audit diff');
+  }
+
+  const assetsQ = query(
+    collection(db, 'assets'),
+    where('categoryId', '==', id)
+  );
+  const subtypesQ = query(
+    collection(db, 'asset_subtypes'),
+    where('categoryId', '==', id)
+  );
+
+  // Pre-flight referential-integrity check (assets) + cascade query
+  // (subtypes) in parallel.
+  const [assetsSnap, subtypesSnap] = await Promise.all([
+    getCountFromServer(assetsQ),
+    getDocs(subtypesQ),
+  ]);
+  const assetCount = assetsSnap.data().count;
+  if (assetCount > 0) {
+    throw new CategoryReferencedError(id, { assetCount });
+  }
+
+  // Snapshot every subtype for the audit log's `before` payload. We
+  // deliberately keep this minimal — name + flags only — to mirror the
+  // shape used by firestoreAssetSubtypeRepository's own audit writes.
+  const cascadedSubtypes = subtypesSnap.docs.map((d) => ({
+    ref: d.ref,
+    id: d.id,
+    data: d.data(),
+  }));
+
+  const ref = categoryDoc(id);
+  const counterRef = categoryCounterDoc(id);
+  const auditRef = newAuditLogRef();
+
+  await runTransaction(db, async (tx) => {
+    // Cascade-delete every subtype + audit each removal. Audit refs are
+    // allocated inside the loop so each subtype gets its own row.
+    for (const sub of cascadedSubtypes) {
+      const subAuditRef = newAuditLogRef();
+      tx.delete(sub.ref);
+      tx.set(
+        subAuditRef,
+        buildAuditLog({
+          entity: 'asset_subtype',
+          entityId: sub.id,
+          action: 'deleted',
+          actorUid: actor.uid,
+          actorRole: actor.role,
+          before: subtypeAuditSnapshot(sub.data),
+          after: null,
+          meta: { cascadeFromCategory: id },
+        })
+      );
+    }
+
+    tx.delete(ref);
+    tx.delete(counterRef);
+
+    tx.set(
+      auditRef,
+      buildAuditLog({
+        entity: 'category',
+        entityId: id,
+        action: 'deleted',
+        actorUid: actor.uid,
+        actorRole: actor.role,
+        before: auditSnapshot(before),
+        after: null,
+        meta:
+          cascadedSubtypes.length > 0
+            ? { cascadedSubtypeCount: cascadedSubtypes.length }
+            : null,
+      })
+    );
+  });
+}
+
+/**
+ * Pluck the audit-friendly fields off a sub-type doc snapshot for the
+ * cascade delete's `before` blob. Mirrors the shape used by
+ * `firestoreAssetSubtypeRepository.auditSnapshot` — keeping the two
+ * synchronized matters because audit consumers may aggregate by
+ * `entity: 'asset_subtype'` and a divergent shape would break diffs.
+ */
+function subtypeAuditSnapshot(data) {
+  if (!data) return null;
+  return {
+    categoryId: data.categoryId ?? null,
+    name: data.name ?? null,
+    requiresMultilang: data.requiresMultilang ?? null,
+    attachableTo: data.attachableTo ?? null,
+    sortOrder: data.sortOrder ?? null,
+    isActive: data.isActive ?? null,
+  };
+}
+
+/**
  * Adapter object matching the `CategoryRepository` port shape.
  * Components should depend on this object, not the named exports above,
  * so it stays drop-in replaceable for tests.
@@ -255,4 +450,5 @@ export const firestoreCategoryRepository = Object.freeze({
   create: createCategory,
   update: updateCategory,
   setActive: setCategoryActive,
+  delete: deleteCategory,
 });

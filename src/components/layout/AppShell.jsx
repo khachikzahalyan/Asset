@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
@@ -18,13 +18,13 @@ import {
   Menu,
   X,
   UserCog,
+  ChevronUp,
 } from 'lucide-react';
 
 import LanguageSwitcher from '@/components/common/LanguageSwitcher.jsx';
-import { Button } from '@/components/ui/button.jsx';
-import { Separator } from '@/components/ui/separator.jsx';
 import HeadOfficeBootstrap from '@/components/system/HeadOfficeBootstrap.jsx';
 import StatusesAndCategoriesBootstrap from '@/components/system/StatusesAndCategoriesBootstrap.jsx';
+import CatalogShapeMigration from '@/components/system/CatalogShapeMigration.jsx';
 import { cn } from '@/lib/utils.js';
 
 import { useAuth } from '@/contexts/AuthContext.jsx';
@@ -37,11 +37,11 @@ const ADMIN_NAV = [
   { to: '/employees', icon: Users, key: 'navEmployees', roles: ADMIN_ROLES },
   { to: '/branches', icon: Building2, key: 'navBranches', roles: [ROLES.SUPER_ADMIN, ROLES.ASSET_ADMIN] },
   { to: '/departments', icon: Network, key: 'navDepartments', roles: [ROLES.SUPER_ADMIN, ROLES.ASSET_ADMIN] },
-  { to: '/categories', icon: Tags, key: 'navCategories', roles: [ROLES.SUPER_ADMIN, ROLES.ASSET_ADMIN] },
+  { to: '/settings/categories', icon: Tags, key: 'navCategories', roles: [ROLES.SUPER_ADMIN] },
   { to: '/statuses', icon: CircleDot, key: 'navStatuses', roles: [ROLES.SUPER_ADMIN, ROLES.ASSET_ADMIN] },
   { to: '/users', icon: UserCog, key: 'navUsers', roles: [ROLES.SUPER_ADMIN] },
   { to: '/audit', icon: ScrollText, key: 'navAuditLog', roles: [ROLES.SUPER_ADMIN] },
-  { to: '/settings', icon: Settings, key: 'navSettings', roles: [ROLES.SUPER_ADMIN] },
+  { to: '/settings/asset-subtypes', icon: Settings, key: 'navAssetSubtypes', roles: [ROLES.SUPER_ADMIN] },
 ];
 
 const EMPLOYEE_NAV = [{ to: '/me', icon: User, key: 'navMe', roles: [ROLES.EMPLOYEE] }];
@@ -84,14 +84,20 @@ export default function AppShell() {
 
   return (
     <div className="flex min-h-screen bg-muted/30">
+      {/* Sidebar.
+          - Mobile (<md): off-canvas, slides in from the left when mobileOpen.
+          - Desktop (md+): sticky to viewport top, full-screen height, never
+            scrolls with the page. The vertical layout is logo / nav (scrolls
+            internally if it overflows) / user block pinned to the bottom. */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-40 w-64 -translate-x-full border-r bg-background transition-transform duration-200 md:static md:translate-x-0',
+          'fixed inset-y-0 left-0 z-40 flex h-screen w-64 -translate-x-full flex-col border-r bg-background transition-transform duration-200',
+          'md:sticky md:top-0 md:translate-x-0 md:self-start',
           mobileOpen && 'translate-x-0'
         )}
         aria-label={t('navSidebar')}
       >
-        <div className="flex h-16 items-center justify-between border-b px-5">
+        <div className="flex h-16 shrink-0 items-center justify-between border-b px-5">
           <Link to="/" className="flex items-center gap-2">
             <span className="grid h-8 w-8 place-items-center rounded-md bg-primary text-primary-foreground">
               <Boxes className="h-4 w-4" aria-hidden="true" />
@@ -108,7 +114,7 @@ export default function AppShell() {
           </button>
         </div>
 
-        <nav className="flex flex-col gap-1 p-3">
+        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
           {visible.map(({ to, icon: Icon, key }) => (
             <NavLink
               key={to}
@@ -129,6 +135,20 @@ export default function AppShell() {
             </NavLink>
           ))}
         </nav>
+
+        {/* Bottom-pinned account menu. The user card is a click-to-open
+            trigger; the actual controls (LanguageSwitcher + Sign-out) live
+            in a popover that opens upward. Click-outside and Escape both
+            close it. Replaces the old top-right header trio. */}
+        <div className="shrink-0 border-t bg-background p-3">
+          <SidebarAccountMenu
+            display={display}
+            role={roleLabel}
+            onSignOut={signOut}
+            signOutLabel={t('signOut')}
+            menuLabel={t('accountMenu')}
+          />
+        </div>
       </aside>
 
       {mobileOpen ? (
@@ -141,31 +161,31 @@ export default function AppShell() {
       ) : null}
 
       <div className="flex min-h-screen flex-1 flex-col">
-        <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b bg-background/80 px-4 backdrop-blur sm:px-6">
+        {/* Top bar shrinks to a mobile-only menu trigger on small screens
+            and disappears entirely on desktop — all account controls now
+            live in the sidebar's bottom panel. */}
+        <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b bg-background/80 px-4 backdrop-blur sm:px-6 md:hidden">
           <button
             type="button"
             onClick={() => setMobileOpen(true)}
-            className="rounded-md p-2 text-muted-foreground hover:bg-accent md:hidden"
+            className="rounded-md p-2 text-muted-foreground hover:bg-accent"
             aria-label={t('openMenu')}
           >
             <Menu className="h-5 w-5" aria-hidden="true" />
           </button>
-
-          <div className="flex flex-1 items-center justify-end gap-3">
-            <LanguageSwitcher />
-            <Separator orientation="vertical" className="h-6" />
-            <UserBlock display={display} role={roleLabel} />
-            <Button variant="outline" size="sm" onClick={signOut} className="gap-2">
-              <LogOut className="h-4 w-4" aria-hidden="true" />
-              <span className="hidden sm:inline">{t('signOut')}</span>
-            </Button>
-          </div>
+          <Link to="/" className="flex items-center gap-2">
+            <span className="grid h-7 w-7 place-items-center rounded-md bg-primary text-primary-foreground">
+              <Boxes className="h-3.5 w-3.5" aria-hidden="true" />
+            </span>
+            <span className="text-sm font-semibold tracking-tight">{t('appName')}</span>
+          </Link>
         </header>
 
         <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">
           <div className="mx-auto w-full max-w-7xl">
             <HeadOfficeBootstrap />
             <StatusesAndCategoriesBootstrap />
+            <CatalogShapeMigration />
             <Outlet />
           </div>
         </main>
@@ -174,16 +194,98 @@ export default function AppShell() {
   );
 }
 
-function UserBlock({ display, role }) {
+function SidebarAccountMenu({ display, role, onSignOut, signOutLabel, menuLabel }) {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef(null);
+
+  // Click-outside + Escape to close. Mounted only while the menu is open
+  // so we don't pay for global listeners when there's nothing to dismiss.
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e) => {
+      if (!wrapperRef.current) return;
+      if (!wrapperRef.current.contains(e.target)) setOpen(false);
+    };
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
+
   return (
-    <div className="hidden items-center gap-3 sm:flex">
-      <div className="grid h-9 w-9 place-items-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
-        {getInitials(display)}
-      </div>
-      <div className="flex flex-col leading-tight">
-        <span className="text-sm font-medium text-foreground">{display}</span>
-        {role ? <span className="text-xs text-muted-foreground">{role}</span> : null}
-      </div>
+    <div ref={wrapperRef} className="relative">
+      {/* Popover panel — opens upward from above the trigger. Pinned to the
+          sidebar's left/right edges with a 12px slot above the trigger. */}
+      {open ? (
+        <div
+          role="menu"
+          className="absolute bottom-full left-0 right-0 mb-2 rounded-lg border bg-popover p-2 shadow-lg"
+        >
+          <div className="px-2 py-1.5">
+            <p className="truncate text-sm font-medium text-foreground">{display}</p>
+            {role ? (
+              <p className="truncate text-xs text-muted-foreground">{role}</p>
+            ) : null}
+          </div>
+          <div className="my-1 h-px bg-border" />
+          <div className="px-1 py-1">
+            <LanguageSwitcher />
+          </div>
+          <div className="my-1 h-px bg-border" />
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              onSignOut?.();
+            }}
+            className={cn(
+              'flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-sm font-medium',
+              'text-red-600 transition-colors hover:bg-red-50 focus:bg-red-50 focus:outline-none'
+            )}
+          >
+            <LogOut className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span className="flex-1 text-left">{signOutLabel}</span>
+          </button>
+        </div>
+      ) : null}
+
+      {/* Trigger card. Hover lifts the bg, open state locks it darker so the
+          operator can see the panel is anchored to this row. The chevron
+          rotates 180° when open. */}
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={menuLabel}
+        onClick={() => setOpen((v) => !v)}
+        className={cn(
+          'flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors',
+          open ? 'bg-accent' : 'bg-muted/40 hover:bg-accent'
+        )}
+      >
+        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
+          {getInitials(display)}
+        </div>
+        <div className="flex min-w-0 flex-1 flex-col leading-tight">
+          <span className="truncate text-sm font-medium text-foreground">{display}</span>
+          {role ? (
+            <span className="truncate text-xs text-muted-foreground">{role}</span>
+          ) : null}
+        </div>
+        <ChevronUp
+          className={cn(
+            'h-4 w-4 shrink-0 text-muted-foreground transition-transform',
+            open ? 'rotate-0' : 'rotate-180'
+          )}
+          aria-hidden="true"
+        />
+      </button>
     </div>
   );
 }

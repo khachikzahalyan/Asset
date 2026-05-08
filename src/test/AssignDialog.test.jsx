@@ -16,6 +16,49 @@ import { AssignmentConflictError } from '@/domain/assignmentEvents.js';
 
 // --- Hook mocks --------------------------------------------------------------
 
+// Wave A: subtype catalog used by AssignDialog to derive license target kinds.
+const subtypeMocks = vi.hoisted(() => ({
+  all: [
+    { subtypeId: 'device_laptop', categoryId: 'device', name: { ru: 'Ноут', en: 'Laptop', hy: 'Նոութ' }, isActive: true },
+    { subtypeId: 'license_office_suite', categoryId: 'license', name: { ru: 'Офис', en: 'Office', hy: 'Օֆիս' }, isActive: true, attachableTo: 'device-or-employee' },
+    { subtypeId: 'license_os', categoryId: 'license', name: { ru: 'OS', en: 'OS', hy: 'OS' }, isActive: true, attachableTo: 'device-only' },
+  ],
+}));
+vi.mock('@/hooks/useAssetSubtypes.js', () => ({
+  useAssetSubtypes: ({ categoryId } = {}) => {
+    const filtered = categoryId
+      ? subtypeMocks.all.filter((s) => s.categoryId === categoryId)
+      : subtypeMocks.all;
+    return { data: filtered, all: subtypeMocks.all, loading: false, error: null };
+  },
+}));
+
+// Wave A: assets list used by AssetSelect (for the asset-target option list).
+vi.mock('@/hooks/useAssets.js', () => ({
+  useAssets: () => ({
+    data: [
+      { assetId: 'a_dev1', inventoryCode: '400/1', name: 'Laptop A', categoryId: 'device', isActive: true },
+      { assetId: 'a_dev2', inventoryCode: '400/2', name: 'Laptop B', categoryId: 'device', isActive: true },
+      { assetId: 'lic_a', inventoryCode: '300/12', name: 'Office', categoryId: 'license', isActive: true },
+    ],
+    loading: false,
+    error: null,
+  }),
+}));
+
+vi.mock('@/hooks/useCategories.js', () => ({
+  useCategories: () => ({
+    data: [
+      { categoryId: 'device', name: { ru: 'Устройство', en: 'Device', hy: 'Սարք' }, prefix: '400' },
+      { categoryId: 'license', name: { ru: 'Лицензия', en: 'License', hy: 'Լիցենզիա' }, prefix: '300' },
+    ],
+    loading: false,
+    error: null,
+  }),
+}));
+
+// --- Pre-existing branch / employee mocks -----------------------------------
+
 const branchesState = {
   data: [
     {
@@ -377,6 +420,105 @@ describe('AssignDialog', () => {
       await waitFor(() => {
         expect(screen.getByText('boom')).toBeInTheDocument();
       });
+    });
+  });
+
+  // --- Wave A: license → asset target -----------------------------------------
+
+  describe('AssignDialog — license-asset target (Wave A)', () => {
+    const LICENSE_ASSET = {
+      assetId: 'lic_a',
+      inventoryCode: '300/12',
+      name: 'MS Office',
+      categoryId: 'license',
+      subtypeId: 'license_office_suite',
+      assignedTo: { kind: 'warehouse', id: null },
+      statusId: 'warehouse',
+      branchId: 'b_main',
+    };
+
+    const LICENSE_DEVICE_ONLY = {
+      ...LICENSE_ASSET,
+      assetId: 'lic_b',
+      subtypeId: 'license_os',
+      name: 'Windows 11',
+    };
+
+    const DEVICE_ASSET = {
+      assetId: 'a_dev',
+      inventoryCode: '400/7',
+      name: 'Laptop',
+      categoryId: 'device',
+      subtypeId: 'device_laptop',
+      assignedTo: { kind: 'warehouse', id: null },
+      statusId: 'warehouse',
+      branchId: 'b_main',
+    };
+
+    it('shows warehouse/employee/asset target kinds when source asset categoryId === license and subtype.attachableTo === device-or-employee', () => {
+      renderDialog({ asset: LICENSE_ASSET, mode: 'issue' });
+
+      expect(
+        screen.queryByRole('radio', { name: i18n.t('assets:holderWarehouse') })
+      ).toBeNull(); // warehouse hidden in issue mode
+      expect(
+        screen.getByRole('radio', { name: i18n.t('assets:holderEmployee') })
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('radio', { name: i18n.t('assets:holderAsset') })
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole('radio', { name: i18n.t('assets:holderBranch') })
+      ).toBeNull();
+      expect(
+        screen.queryByRole('radio', { name: i18n.t('assets:holderDepartment') })
+      ).toBeNull();
+    });
+
+    it('disables employee target when subtype.attachableTo === device-only and shows the device-only hint', () => {
+      renderDialog({ asset: LICENSE_DEVICE_ONLY, mode: 'issue' });
+
+      const employeeRadio = screen.getByRole('radio', {
+        name: i18n.t('assets:holderEmployee'),
+      });
+      expect(employeeRadio).toBeDisabled();
+      expect(
+        screen.getByText(i18n.t('assets:licenseDeviceOnlyHint'))
+      ).toBeInTheDocument();
+      // Asset target is still available.
+      expect(
+        screen.getByRole('radio', { name: i18n.t('assets:holderAsset') })
+      ).toBeInTheDocument();
+    });
+
+    it('renders AssetSelect when asset kind is chosen', async () => {
+      const user = userEvent.setup({ delay: null });
+      renderDialog({ asset: LICENSE_ASSET, mode: 'issue' });
+
+      await user.click(
+        screen.getByRole('radio', { name: i18n.t('assets:holderAsset') })
+      );
+
+      // The AssetSelect is mounted with a known testid hook for this dialog.
+      expect(document.getElementById('assign-asset-target')).toBeInTheDocument();
+    });
+
+    it('does NOT show asset target for non-license categories', () => {
+      renderDialog({ asset: DEVICE_ASSET, mode: 'issue' });
+
+      expect(
+        screen.queryByRole('radio', { name: i18n.t('assets:holderAsset') })
+      ).toBeNull();
+      // Default device-mode kinds remain available.
+      expect(
+        screen.getByRole('radio', { name: i18n.t('assets:holderEmployee') })
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('radio', { name: i18n.t('assets:holderBranch') })
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('radio', { name: i18n.t('assets:holderDepartment') })
+      ).toBeInTheDocument();
     });
   });
 });

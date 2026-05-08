@@ -19,6 +19,7 @@
  */
 
 import { SUPPORTED_LOCALES } from '@/i18n/namespaces.js';
+import { ASSIGNMENT_KIND_LIST } from '@/domain/assets.js';
 
 /**
  * @typedef {Object} CategoryName
@@ -35,6 +36,10 @@ import { SUPPORTED_LOCALES } from '@/i18n/namespaces.js';
  * @property {boolean} requiresMultilang
  *   When true the form renders a <MultiLangInput> for `name`; when false
  *   it renders a single <Input> and writes the same string into ru/en/hy.
+ * @property {string[]} attachableTo
+ *   Subset of ASSIGNMENT_KIND_LIST. Default holder targets offered when a
+ *   sub-type is created under this category. Sub-types may narrow this set
+ *   but never widen it.
  * @property {boolean} isActive
  * @property {import('firebase/firestore').Timestamp} createdAt
  * @property {string} createdBy
@@ -47,6 +52,7 @@ import { SUPPORTED_LOCALES } from '@/i18n/namespaces.js';
  * @property {CategoryName} name
  * @property {string} [inventoryCodePrefix]
  * @property {boolean} [requiresMultilang]
+ * @property {string[]} [attachableTo]
  * @property {boolean} [isActive]
  */
 
@@ -60,6 +66,57 @@ export const CATEGORY_CODES = Object.freeze({
   FURNITURE: 'furniture',
   LICENSE: 'license',
 });
+
+/**
+ * Thrown by the categories repository when the caller-supplied stable id
+ * collides with an existing doc. The UI catches this and displays the
+ * `errorIdConflict` translation, which prompts the operator to retry with
+ * a different name (the slug-derivation will then yield a different id).
+ *
+ * The repository never auto-suffixes silently — that would leak the slug
+ * collision into the stored id (`device_2`) without surfacing it to the
+ * user. The Settings page handles auto-suffixing client-side and shows
+ * the about-to-be-committed id live so the operator stays in control.
+ */
+export class CategoryIdConflictError extends Error {
+  constructor(id) {
+    super(`Category id already exists: ${id}`);
+    this.name = 'CategoryIdConflictError';
+    this.id = id;
+  }
+}
+
+/**
+ * Thrown by the categories repository when a hard-delete is attempted on a
+ * category that is still referenced by at least one asset. Sub-types are
+ * NOT a blocker: deleting a category cascades the delete to every subtype
+ * under it (in the same transaction) — operators told us in 2026-05-08
+ * that this is the natural mental model ("если удалить Категорию все
+ * под категории удалятся, это логично"). Assets remain a blocker because
+ * they carry real-world inventory data and silently orphaning their
+ * `categoryId` field would corrupt history.
+ *
+ * Note on the race window: this is a pre-flight check; a concurrent
+ * write could theoretically slip a new asset into the category after we
+ * count and before we delete. That's accepted because (a) the
+ * category-pick path enforces `isActive === true` on the category at
+ * write time, and (b) deactivating before deletion is the recommended
+ * operator workflow. The pre-flight stops the common case; the rare
+ * race remains recoverable from audit history.
+ */
+export class CategoryReferencedError extends Error {
+  /**
+   * @param {string} id
+   * @param {{ assetCount: number }} counts
+   */
+  constructor(id, counts) {
+    super(`Category ${id} is referenced by ${counts.assetCount} assets`);
+    this.name = 'CategoryReferencedError';
+    this.code = 'category/referenced';
+    this.id = id;
+    this.assetCount = counts.assetCount;
+  }
+}
 
 export const CATEGORY_CODE_LIST = Object.freeze(Object.values(CATEGORY_CODES));
 
@@ -92,6 +149,7 @@ export function emptyCategoryInput() {
     name: emptyCategoryName(),
     inventoryCodePrefix: '',
     requiresMultilang: true,
+    attachableTo: [],
     isActive: true,
   };
 }
@@ -141,10 +199,21 @@ export function sanitizeCategoryInput(input) {
     ? raw.inventoryCodePrefix.trim().toUpperCase()
     : '';
 
+  const attachableTo = Array.isArray(raw.attachableTo)
+    ? Array.from(
+        new Set(
+          raw.attachableTo.filter(
+            (k) => typeof k === 'string' && ASSIGNMENT_KIND_LIST.includes(k)
+          )
+        )
+      )
+    : [];
+
   return {
     name,
     inventoryCodePrefix: prefixRaw,
     requiresMultilang,
+    attachableTo,
     isActive: raw.isActive === undefined ? true : Boolean(raw.isActive),
   };
 }
@@ -184,6 +253,10 @@ export function validateCategoryInput(input) {
     errors.inventoryCodePrefix = 'errorRequired';
   } else if (!INVENTORY_PREFIX_REGEX.test(sanitized.inventoryCodePrefix)) {
     errors.inventoryCodePrefix = 'errorPrefixFormat';
+  }
+
+  if (!sanitized.attachableTo || sanitized.attachableTo.length === 0) {
+    errors.attachableTo = 'errorAttachableEmpty';
   }
 
   return errors;

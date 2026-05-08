@@ -4,6 +4,7 @@ import { db } from '@/lib/firebase/index.js';
 
 const ALLOWED_ENTITIES = [
   'asset',
+  'asset_subtype',
   'branch',
   'employee',
   'department',

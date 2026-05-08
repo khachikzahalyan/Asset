@@ -10,6 +10,8 @@ import { Spinner } from '@/components/ui/spinner.jsx';
 import BranchSelect from '@/components/features/branches/BranchSelect.jsx';
 import EmployeeSelect from '@/components/features/employees/EmployeeSelect.jsx';
 import DepartmentSelect from '@/components/features/assets/DepartmentSelect.jsx';
+import AssetSelect from '@/components/features/assets/AssetSelect.jsx';
+import { useAssetSubtypes } from '@/hooks/useAssetSubtypes.js';
 
 import { ASSIGNMENT_KINDS } from '@/domain/assets.js';
 import {
@@ -61,16 +63,17 @@ export default function AssignDialog({ open, onClose, asset, mode, onSubmit, act
       // Return forces the target to warehouse with no id picked yet —
       // the user must pick a destination warehouse via BranchSelect.
       seed.toAssignment = { kind: ASSIGNMENT_KINDS.WAREHOUSE, id: null };
-    } else if (mode === 'issue') {
-      // Default to "employee" because that's the most common path; the
-      // user can switch to branch / department if needed.
-      seed.toAssignment = { kind: ASSIGNMENT_KINDS.EMPLOYEE, id: null };
     } else {
-      // transfer
-      seed.toAssignment = { kind: ASSIGNMENT_KINDS.EMPLOYEE, id: null };
+      // Default kind for issue / transfer is "employee", except for licenses,
+      // where the most natural target is another asset (device).
+      const isLicense = asset?.categoryId === 'license';
+      seed.toAssignment = {
+        kind: isLicense ? ASSIGNMENT_KINDS.ASSET : ASSIGNMENT_KINDS.EMPLOYEE,
+        id: null,
+      };
     }
     return seed;
-  }, [asset, mode, isReturn]);
+  }, [asset, isReturn]);
 
   const [form, setForm] = useState(initial);
   const [errors, setErrors] = useState({});
@@ -92,21 +95,44 @@ export default function AssignDialog({ open, onClose, asset, mode, onSubmit, act
 
   const currentKind = asset?.assignedTo?.kind ?? ASSIGNMENT_KINDS.WAREHOUSE;
 
-  // The set of admissible target kinds depends on mode.
+  // Look up the source asset's subtype to drive license-mode target rules.
+  const { data: subtypesForCategory } = useAssetSubtypes({
+    categoryId: asset?.categoryId ?? null,
+  });
+  const sourceSubtype = useMemo(() => {
+    if (!asset?.subtypeId) return null;
+    return subtypesForCategory.find((s) => s.subtypeId === asset.subtypeId) ?? null;
+  }, [subtypesForCategory, asset?.subtypeId]);
+  const isLicenseSource = asset?.categoryId === 'license';
+  const isDeviceOnlyLicense =
+    isLicenseSource && sourceSubtype?.attachableTo === 'device-only';
+
+  // The set of admissible target kinds depends on mode + the source asset's
+  // category/subtype. For licenses we expose `asset` (and conditionally
+  // `employee`) instead of branch/department; for everything else we keep
+  // the historical employee/branch/department triple.
   const targetKinds = useMemo(() => {
     if (isReturn) {
       return [{ kind: ASSIGNMENT_KINDS.WAREHOUSE, label: t('holderWarehouse') }];
     }
-    // For issue / transfer, expose all kinds; the current holder is
-    // disabled (you can't move to where you already are), and warehouse
-    // is excluded from issue/transfer (use the dedicated Return action).
-    const base = [
+    if (isLicenseSource) {
+      const kinds = [
+        {
+          kind: ASSIGNMENT_KINDS.EMPLOYEE,
+          label: t('holderEmployee'),
+          disabled: isDeviceOnlyLicense,
+        },
+        { kind: ASSIGNMENT_KINDS.ASSET, label: t('holderAsset') },
+      ];
+      return kinds;
+    }
+    // Device, furniture, and any other category: existing behaviour.
+    return [
       { kind: ASSIGNMENT_KINDS.EMPLOYEE, label: t('holderEmployee') },
       { kind: ASSIGNMENT_KINDS.BRANCH, label: t('holderBranch') },
       { kind: ASSIGNMENT_KINDS.DEPARTMENT, label: t('holderDepartment') },
     ];
-    return base;
-  }, [isReturn, t]);
+  }, [isReturn, isLicenseSource, isDeviceOnlyLicense, t]);
 
   function setKind(nextKind) {
     setForm((f) => ({
@@ -212,6 +238,7 @@ export default function AssignDialog({ open, onClose, asset, mode, onSubmit, act
               const isWarehouseTarget = opt.kind === ASSIGNMENT_KINDS.WAREHOUSE;
               const disabled =
                 submitting ||
+                opt.disabled === true ||
                 (sameKind && (isWarehouseTarget || asset?.assignedTo?.id === form.toAssignment?.id));
               return (
                 <label key={opt.kind} className="inline-flex items-center gap-2">
@@ -228,6 +255,12 @@ export default function AssignDialog({ open, onClose, asset, mode, onSubmit, act
               );
             })}
           </div>
+
+          {isDeviceOnlyLicense ? (
+            <p className="text-xs text-muted-foreground">
+              {t('licenseDeviceOnlyHint')}
+            </p>
+          ) : null}
 
           {/* Holder selector per kind. */}
           {form.toAssignment?.kind === ASSIGNMENT_KINDS.EMPLOYEE ? (
@@ -267,6 +300,21 @@ export default function AssignDialog({ open, onClose, asset, mode, onSubmit, act
                 value={form.toAssignment?.id ?? null}
                 onChange={(next) => setTargetId(next)}
                 disabled={submitting}
+              />
+            </div>
+          ) : null}
+
+          {form.toAssignment?.kind === ASSIGNMENT_KINDS.ASSET ? (
+            <div className="space-y-1.5">
+              <Label htmlFor="assign-asset-target">{t('holderAsset')}</Label>
+              <AssetSelect
+                id="assign-asset-target"
+                name="toAssignment.id"
+                value={form.toAssignment?.id ?? ''}
+                onChange={(next) => setTargetId(next || null)}
+                disabled={submitting}
+                excludeAssetId={asset?.assetId}
+                restrictToCategoryIds={['device']}
               />
             </div>
           ) : null}

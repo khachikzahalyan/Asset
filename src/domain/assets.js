@@ -55,6 +55,7 @@ export const ASSIGNMENT_KINDS = Object.freeze({
   EMPLOYEE: 'employee',
   BRANCH: 'branch',
   DEPARTMENT: 'department',
+  ASSET: 'asset',
 });
 
 export const ASSIGNMENT_KIND_LIST = Object.freeze(
@@ -65,7 +66,8 @@ export const ASSIGNMENT_KIND_LIST = Object.freeze(
  * @typedef {{ kind: 'warehouse', id: null }
  *           | { kind: 'employee', id: string }
  *           | { kind: 'branch', id: string }
- *           | { kind: 'department', id: string }} AssignedTo
+ *           | { kind: 'department', id: string }
+ *           | { kind: 'asset', id: string }} AssignedTo
  */
 
 /**
@@ -80,6 +82,7 @@ export const ASSIGNMENT_KIND_LIST = Object.freeze(
  * @property {string} assetId                                // mirrors doc id
  * @property {string} inventoryCode                          // ^[A-Z0-9]+/[0-9]+$, immutable
  * @property {string} categoryId                             // FK -> categories, immutable
+ * @property {string} subtypeId                              // FK -> asset_subtypes
  * @property {string} statusId                               // FK -> asset_statuses
  * @property {AssetName | string} name                       // Tier 3, multi-lang map OR single string
  * @property {string|null} brand                             // Tier 4, ASCII, optional
@@ -90,6 +93,9 @@ export const ASSIGNMENT_KIND_LIST = Object.freeze(
  * @property {string|null} notes                             // Tier 3, optional
  * @property {import('firebase/firestore').Timestamp|null} purchaseDate
  * @property {number|null} purchasePrice
+ * @property {('new'|'used')} condition
+ * @property {import('firebase/firestore').Timestamp|null} warrantyStart
+ * @property {import('firebase/firestore').Timestamp|null} warrantyEnd
  * @property {boolean} isActive
  * @property {import('firebase/firestore').Timestamp} createdAt
  * @property {string} createdBy
@@ -100,6 +106,7 @@ export const ASSIGNMENT_KIND_LIST = Object.freeze(
 /**
  * @typedef {Object} AssetInput
  * @property {string} categoryId
+ * @property {string} [subtypeId]
  * @property {AssetName | string} [name]
  * @property {string|null} [brand]
  * @property {string|null} [model]
@@ -110,6 +117,9 @@ export const ASSIGNMENT_KIND_LIST = Object.freeze(
  * @property {string|null} [notes]
  * @property {Date|null} [purchaseDate]
  * @property {number|null} [purchasePrice]
+ * @property {('new'|'used')} [condition]
+ * @property {Date|null} [warrantyStart]
+ * @property {Date|null} [warrantyEnd]
  * @property {boolean} [isActive]
  */
 
@@ -161,6 +171,7 @@ export function emptyAssetName() {
 export function emptyAssetInput() {
   return {
     categoryId: '',
+    subtypeId: '',
     name: '',
     brand: null,
     model: null,
@@ -171,6 +182,9 @@ export function emptyAssetInput() {
     notes: null,
     purchaseDate: null,
     purchasePrice: null,
+    condition: 'new',
+    warrantyStart: null,
+    warrantyEnd: null,
     isActive: true,
   };
 }
@@ -226,13 +240,17 @@ export function sanitizeAssetInput(input, opts = {}) {
 
   // ---- branchId ----
   // - warehouse / branch modes need a branchId (which warehouse / which branch);
-  // - employee / department modes don't.
+  // - employee / department / asset modes don't (the asset is "with someone/something").
   let branchId = trimOrNull(raw.branchId);
-  if (kind === ASSIGNMENT_KINDS.EMPLOYEE || kind === ASSIGNMENT_KINDS.DEPARTMENT) {
+  if (
+    kind === ASSIGNMENT_KINDS.EMPLOYEE ||
+    kind === ASSIGNMENT_KINDS.DEPARTMENT ||
+    kind === ASSIGNMENT_KINDS.ASSET
+  ) {
     branchId = null;
   }
 
-  // ---- numbers / dates ----
+  // ---- numbers ----
   let purchasePrice = null;
   if (typeof raw.purchasePrice === 'number' && Number.isFinite(raw.purchasePrice)) {
     purchasePrice = raw.purchasePrice;
@@ -241,16 +259,32 @@ export function sanitizeAssetInput(input, opts = {}) {
     if (Number.isFinite(parsed)) purchasePrice = parsed;
   }
 
-  let purchaseDate = null;
-  if (raw.purchaseDate instanceof Date && !Number.isNaN(raw.purchaseDate.valueOf())) {
-    purchaseDate = raw.purchaseDate;
-  } else if (isPlainString(raw.purchaseDate) && raw.purchaseDate.trim().length > 0) {
-    const parsed = new Date(raw.purchaseDate.trim());
-    if (!Number.isNaN(parsed.valueOf())) purchaseDate = parsed;
+  // ---- dates: purchaseDate, warrantyStart, warrantyEnd ----
+  function parseDate(v) {
+    if (v instanceof Date && !Number.isNaN(v.valueOf())) return v;
+    if (isPlainString(v) && v.trim().length > 0) {
+      const parsed = new Date(v.trim());
+      if (!Number.isNaN(parsed.valueOf())) return parsed;
+    }
+    return null;
+  }
+  const purchaseDate = parseDate(raw.purchaseDate);
+
+  // ---- condition + warranty ----
+  // Sanitizer coerces unknown / blank condition to 'new' (the default).
+  // 'used' is the only non-default. Warranty fields are forced null when
+  // condition is 'used' so the persisted shape is consistent.
+  const condition = raw.condition === 'used' ? 'used' : 'new';
+  let warrantyStart = parseDate(raw.warrantyStart);
+  let warrantyEnd = parseDate(raw.warrantyEnd);
+  if (condition === 'used') {
+    warrantyStart = null;
+    warrantyEnd = null;
   }
 
   return {
     categoryId: trimOrEmpty(raw.categoryId),
+    subtypeId: trimOrEmpty(raw.subtypeId),
     name,
     brand: trimOrNull(raw.brand),
     model: trimOrNull(raw.model),
@@ -261,6 +295,9 @@ export function sanitizeAssetInput(input, opts = {}) {
     notes: trimOrNull(raw.notes),
     purchaseDate,
     purchasePrice,
+    condition,
+    warrantyStart,
+    warrantyEnd,
     isActive: raw.isActive === undefined ? true : Boolean(raw.isActive),
   };
 }
@@ -272,18 +309,27 @@ export function sanitizeAssetInput(input, opts = {}) {
  * Error keys are i18n keys in the `assets` namespace.
  *
  * @param {AssetInput} input
- * @param {{ category?: { requiresMultilang: boolean } | null }} [opts]
+ * @param {{
+ *   category?: { requiresMultilang: boolean } | null,
+ *   subtype?: { attachableTo: string[] } | null,
+ * }} [opts]
  * @returns {Record<string, string>}
  */
 export function validateAssetInput(input, opts = {}) {
   const errors = {};
   const category = opts.category ?? null;
+  const subtype = opts.subtype ?? null;
   const wantsMultilang = Boolean(category?.requiresMultilang);
   const s = sanitizeAssetInput(input, opts);
 
   // categoryId required.
   if (!s.categoryId) {
     errors.categoryId = 'errorRequired';
+  }
+
+  // subtypeId required.
+  if (!s.subtypeId) {
+    errors.subtypeId = 'errorRequired';
   }
 
   // name validation. Only meaningful when a category is picked (otherwise
@@ -311,12 +357,20 @@ export function validateAssetInput(input, opts = {}) {
     errors.serialNumber = 'errorAsciiOnly';
   }
 
-  // assignedTo validation.
+  // assignedTo validation: shape + per-sub-type allow-list.
   const at = s.assignedTo;
   if (!ASSIGNMENT_KIND_LIST.includes(at?.kind)) {
     errors.assignedTo = 'errorRequired';
   } else if (at.kind !== ASSIGNMENT_KINDS.WAREHOUSE && !at.id) {
     errors.assignedTo = 'errorRequired';
+  } else if (
+    subtype?.attachableTo &&
+    Array.isArray(subtype.attachableTo) &&
+    subtype.attachableTo.length > 0 &&
+    !subtype.attachableTo.includes(at.kind)
+  ) {
+    // The chosen sub-type does not list this holder kind as allowed.
+    errors.assignedTo = 'errorAssignedKindNotAllowed';
   }
 
   // branchId required for warehouse / branch modes.
@@ -330,6 +384,21 @@ export function validateAssetInput(input, opts = {}) {
   // statusId must be non-empty (defaults to 'warehouse', so this is
   // really a defensive guard).
   if (!s.statusId) errors.statusId = 'errorRequired';
+
+  // condition must be a known string. The sanitizer normalizes to 'new'
+  // by default, so this is a defensive guard for callers that bypass the
+  // sanitizer.
+  if (s.condition !== 'new' && s.condition !== 'used') {
+    errors.condition = 'errorRequired';
+  }
+
+  // warranty: end >= start when both provided. Only meaningful for new
+  // assets (used assets have warranty fields cleared by the sanitizer).
+  if (s.condition === 'new' && s.warrantyStart && s.warrantyEnd) {
+    if (s.warrantyEnd.valueOf() < s.warrantyStart.valueOf()) {
+      errors.warrantyEnd = 'errorWarrantyEndBeforeStart';
+    }
+  }
 
   return errors;
 }

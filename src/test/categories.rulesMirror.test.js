@@ -48,6 +48,20 @@ function isValidLocaleMap(m) {
   return true;
 }
 
+const ATTACHABLE_KINDS = new Set([
+  'warehouse',
+  'employee',
+  'branch',
+  'department',
+  'asset',
+]);
+
+function isValidAttachableTo(v) {
+  if (!Array.isArray(v)) return false;
+  if (v.length < 1 || v.length > 5) return false;
+  return v.every((k) => ATTACHABLE_KINDS.has(k));
+}
+
 // ---- /categories ---------------------------------------------------------
 
 function canReadCategory({ auth, users }) {
@@ -59,6 +73,7 @@ function canCreateCategory({ auth, users, requestData, requestTime }) {
   if (!isValidLocaleMap(requestData.name)) return false;
   if (!isValidInventoryPrefix(requestData.inventoryCodePrefix)) return false;
   if (typeof requestData.requiresMultilang !== 'boolean') return false;
+  if (!isValidAttachableTo(requestData.attachableTo)) return false;
   if (typeof requestData.isActive !== 'boolean') return false;
   if (requestData.createdBy !== auth.uid) return false;
   if (requestData.updatedBy !== auth.uid) return false;
@@ -72,6 +87,7 @@ function canUpdateCategory({ auth, users, before, requestData, requestTime }) {
   if (!isValidLocaleMap(requestData.name)) return false;
   if (!isValidInventoryPrefix(requestData.inventoryCodePrefix)) return false;
   if (typeof requestData.requiresMultilang !== 'boolean') return false;
+  if (!isValidAttachableTo(requestData.attachableTo)) return false;
   if (typeof requestData.isActive !== 'boolean') return false;
   if (requestData.createdBy !== before.createdBy) return false;
   if (requestData.createdAt !== before.createdAt) return false;
@@ -80,8 +96,11 @@ function canUpdateCategory({ auth, users, before, requestData, requestTime }) {
   return true;
 }
 
-function canDeleteCategory() {
-  return false;
+// Wave A.9: hard-delete is permitted for super_admin only. Referential
+// integrity (no referencing assets / sub-types) is enforced at the
+// repository layer, not in rules.
+function canDeleteCategory({ auth, users }) {
+  return isSuperAdmin(auth, users);
 }
 
 // ---- /category_counters --------------------------------------------------
@@ -117,8 +136,10 @@ function canUpdateCategoryCounter({ auth, users, before, requestData, requestTim
   return true;
 }
 
-function canDeleteCategoryCounter() {
-  return false;
+// Wave A.9: super_admin may delete a counter doc as part of the
+// category hard-delete flow. Asset Admin and below are denied.
+function canDeleteCategoryCounter({ auth, users }) {
+  return isSuperAdmin(auth, users);
 }
 
 // ---- Test fixtures -------------------------------------------------------
@@ -135,6 +156,7 @@ const validCategory = {
   name: { ru: 'Мебель', en: 'Furniture', hy: 'Կահույք' },
   inventoryCodePrefix: '500',
   requiresMultilang: true,
+  attachableTo: ['warehouse', 'employee', 'branch', 'department'],
   isActive: true,
 };
 
@@ -284,6 +306,76 @@ describe('rules mirror — /categories create', () => {
       })
     ).toBe(false);
   });
+
+  it('rejects empty attachableTo array', () => {
+    expect(
+      canCreateCategory({
+        auth: asAuth('super_uid'),
+        users,
+        requestData: { ...createCategoryDoc('super_uid'), attachableTo: [] },
+        requestTime: REQ_TIME,
+      })
+    ).toBe(false);
+  });
+
+  it('rejects attachableTo with unknown kind', () => {
+    expect(
+      canCreateCategory({
+        auth: asAuth('super_uid'),
+        users,
+        requestData: {
+          ...createCategoryDoc('super_uid'),
+          attachableTo: ['warehouse', 'cosmos'],
+        },
+        requestTime: REQ_TIME,
+      })
+    ).toBe(false);
+  });
+
+  it('rejects attachableTo as string (legacy enum)', () => {
+    expect(
+      canCreateCategory({
+        auth: asAuth('super_uid'),
+        users,
+        requestData: {
+          ...createCategoryDoc('super_uid'),
+          attachableTo: 'device-only',
+        },
+        requestTime: REQ_TIME,
+      })
+    ).toBe(false);
+  });
+
+  it('rejects attachableTo as null', () => {
+    expect(
+      canCreateCategory({
+        auth: asAuth('super_uid'),
+        users,
+        requestData: { ...createCategoryDoc('super_uid'), attachableTo: null },
+        requestTime: REQ_TIME,
+      })
+    ).toBe(false);
+  });
+
+  it('accepts attachableTo with all 5 allowed kinds', () => {
+    expect(
+      canCreateCategory({
+        auth: asAuth('super_uid'),
+        users,
+        requestData: {
+          ...createCategoryDoc('super_uid'),
+          attachableTo: [
+            'warehouse',
+            'employee',
+            'branch',
+            'department',
+            'asset',
+          ],
+        },
+        requestTime: REQ_TIME,
+      })
+    ).toBe(true);
+  });
 });
 
 describe('rules mirror — /categories update', () => {
@@ -372,8 +464,14 @@ describe('rules mirror — /categories update', () => {
 });
 
 describe('rules mirror — /categories delete', () => {
-  it('every role denied', () => {
-    expect(canDeleteCategory()).toBe(false);
+  it.each([
+    ['super_admin', 'super_uid', true],
+    ['asset_admin', 'asset_uid', false],
+    ['tech_admin', 'tech_uid', false],
+    ['employee', 'emp_uid', false],
+    ['anonymous', null, false],
+  ])('%s delete category -> %s (Wave A.9)', (_label, uid, expected) => {
+    expect(canDeleteCategory({ auth: asAuth(uid), users })).toBe(expected);
   });
 });
 
@@ -555,7 +653,13 @@ describe('rules mirror — /category_counters update', () => {
 });
 
 describe('rules mirror — /category_counters delete', () => {
-  it('every role denied', () => {
-    expect(canDeleteCategoryCounter()).toBe(false);
+  it.each([
+    ['super_admin', 'super_uid', true],
+    ['asset_admin', 'asset_uid', false],
+    ['tech_admin', 'tech_uid', false],
+    ['employee', 'emp_uid', false],
+    ['anonymous', null, false],
+  ])('%s delete counter -> %s (Wave A.9)', (_label, uid, expected) => {
+    expect(canDeleteCategoryCounter({ auth: asAuth(uid), users })).toBe(expected);
   });
 });

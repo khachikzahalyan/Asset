@@ -25,11 +25,12 @@ describe('categories domain', () => {
     expect(emptyCategoryName()).toEqual({ ru: '', en: '', hy: '' });
   });
 
-  it('emptyCategoryInput defaults to multilang+active with empty name & prefix', () => {
+  it('emptyCategoryInput defaults to multilang+active with empty name, prefix, attachableTo', () => {
     expect(emptyCategoryInput()).toEqual({
       name: { ru: '', en: '', hy: '' },
       inventoryCodePrefix: '',
       requiresMultilang: true,
+      attachableTo: [],
       isActive: true,
     });
   });
@@ -64,6 +65,7 @@ describe('categories domain', () => {
         name: { ru: 'Устройство', en: 'Device', hy: 'Սարք' },
         inventoryCodePrefix: 'LIC',
         requiresMultilang: true,
+        attachableTo: [],
         isActive: true,
       });
     });
@@ -128,6 +130,7 @@ describe('categories domain', () => {
         name: { ru: '', en: '', hy: '' },
         inventoryCodePrefix: '',
         requiresMultilang: true,
+        attachableTo: [],
         isActive: true,
       });
     });
@@ -162,6 +165,7 @@ describe('categories domain', () => {
         name: { ru: 'Мебель', en: 'Furniture', hy: 'Կահույք' },
         inventoryCodePrefix: '500',
         requiresMultilang: true,
+        attachableTo: ['branch'],
       });
       expect(errors).toEqual({});
     });
@@ -171,6 +175,7 @@ describe('categories domain', () => {
         name: { ru: 'Устройство', en: '', hy: '' },
         inventoryCodePrefix: '400',
         requiresMultilang: false,
+        attachableTo: ['branch'],
       });
       expect(errors).toEqual({});
     });
@@ -208,6 +213,7 @@ describe('categories domain', () => {
         name: { ru: 'a', en: 'b', hy: 'c' },
         inventoryCodePrefix: 'LIC',
         requiresMultilang: true,
+        attachableTo: ['branch'],
       });
       expect(errors).toEqual({});
     });
@@ -218,6 +224,7 @@ describe('categories domain', () => {
           name: { ru: '', en: '', hy: '' },
           inventoryCodePrefix: '',
           requiresMultilang: true,
+          attachableTo: ['employee'],
         })
       ).toBe(false);
       expect(
@@ -225,8 +232,54 @@ describe('categories domain', () => {
           name: { ru: 'a', en: 'b', hy: 'c' },
           inventoryCodePrefix: 'LIC',
           requiresMultilang: true,
+          attachableTo: ['employee'],
         })
       ).toBe(true);
+    });
+  });
+
+  describe('Category attachableTo', () => {
+    it('sanitizer dedupes and drops unknown kinds', () => {
+      const out = sanitizeCategoryInput({
+        name: { ru: 'X', en: 'X', hy: 'X' },
+        inventoryCodePrefix: 'A1',
+        attachableTo: ['employee', 'employee', 'unknown', 'branch'],
+      });
+      expect(out.attachableTo).toEqual(['employee', 'branch']);
+    });
+
+    it('sanitizer coerces missing/non-array to []', () => {
+      expect(
+        sanitizeCategoryInput({
+          name: { ru: 'X', en: 'X', hy: 'X' },
+          inventoryCodePrefix: 'A1',
+        }).attachableTo
+      ).toEqual([]);
+      expect(
+        sanitizeCategoryInput({
+          name: { ru: 'X', en: 'X', hy: 'X' },
+          inventoryCodePrefix: 'A1',
+          attachableTo: 'employee',
+        }).attachableTo
+      ).toEqual([]);
+    });
+
+    it('validator flags empty array with errorAttachableEmpty', () => {
+      const errs = validateCategoryInput({
+        name: { ru: 'X', en: 'X', hy: 'X' },
+        inventoryCodePrefix: 'A1',
+        attachableTo: [],
+      });
+      expect(errs.attachableTo).toBe('errorAttachableEmpty');
+    });
+
+    it('validator passes when at least one kind is present', () => {
+      const errs = validateCategoryInput({
+        name: { ru: 'X', en: 'X', hy: 'X' },
+        inventoryCodePrefix: 'A1',
+        attachableTo: ['employee'],
+      });
+      expect(errs.attachableTo).toBeUndefined();
     });
   });
 });
