@@ -20,7 +20,10 @@ import { useUsers } from '@/hooks/useUsers.js';
 import { useUserInvitations } from '@/hooks/useUserInvitations.js';
 import { firestoreUsersRepository } from '@/infra/repositories/firestoreUsersRepository.js';
 import { firestoreUserInvitationsRepository } from '@/infra/repositories/firestoreUserInvitationsRepository.js';
+import { sendInvitationSignInLink } from '@/lib/firebase/auth.js';
 import { ROLES } from '@/domain/roles.js';
+
+const INVITATION_LINK_REDIRECT = `${window.location.origin}/auth/email-link`;
 
 import InviteAdminDialog from '@/components/features/users/InviteAdminDialog.jsx';
 import RoleChangeDialog from '@/components/features/users/RoleChangeDialog.jsx';
@@ -47,6 +50,8 @@ export default function UsersPage() {
   const [confirmAction, setConfirmAction] = useState(null);
   // confirmAction shape: { kind: 'deactivate'|'reactivate'|'revoke', payload: ... }
   const [actionError, setActionError] = useState(null);
+  const [actionNotice, setActionNotice] = useState(null);
+  const [resendingEmail, setResendingEmail] = useState(null);
 
   const activeSuperAdminCount = useMemo(
     () => users.filter((u) => u.role === ROLES.SUPER_ADMIN && u.isActive !== false).length,
@@ -72,6 +77,21 @@ export default function UsersPage() {
     setConfirmAction({ kind: 'revoke', payload: invitation });
   }
 
+  async function resendInvitationLink(invitation) {
+    setResendingEmail(invitation.email);
+    setActionError(null);
+    setActionNotice(null);
+    try {
+      await sendInvitationSignInLink(invitation.email, INVITATION_LINK_REDIRECT);
+      setActionNotice(t('toastLinkResent', { email: invitation.email }));
+    } catch (err) {
+      console.error('[AMS resend invite link]', err);
+      setActionError(t('errResendLinkFailed'));
+    } finally {
+      setResendingEmail(null);
+    }
+  }
+
   async function runConfirmedAction() {
     if (!confirmAction || !actor) return;
     const { kind, payload } = confirmAction;
@@ -84,6 +104,7 @@ export default function UsersPage() {
         await firestoreUserInvitationsRepository.revoke(payload.email, payload, actor);
       }
       setActionError(null);
+      setActionNotice(null);
       setConfirmAction(null);
     } catch (err) {
       console.error('[AMS confirmed action]', err);
@@ -105,6 +126,12 @@ export default function UsersPage() {
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" aria-hidden="true" />
           <AlertDescription>{actionError}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      {actionNotice ? (
+        <Alert>
+          <AlertDescription>{actionNotice}</AlertDescription>
         </Alert>
       ) : null}
 
@@ -224,16 +251,29 @@ export default function UsersPage() {
                         {inv.invitedAt?.toDate?.()?.toLocaleString?.() ?? ''}
                       </td>
                       <td className="px-3 py-2 text-right">
-                        {inv.email !== user?.email?.toLowerCase() ? (
+                        <div className="inline-flex gap-2">
                           <Button
                             type="button"
                             size="sm"
                             variant="outline"
-                            onClick={() => startRevoke(inv)}
+                            disabled={resendingEmail === inv.email}
+                            onClick={() => resendInvitationLink(inv)}
                           >
-                            {t('actionsRevoke')}
+                            {resendingEmail === inv.email
+                              ? t('actionsResending')
+                              : t('actionsResendLink')}
                           </Button>
-                        ) : null}
+                          {inv.email !== user?.email?.toLowerCase() ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => startRevoke(inv)}
+                            >
+                              {t('actionsRevoke')}
+                            </Button>
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
                   ))}

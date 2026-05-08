@@ -24,6 +24,9 @@ import {
   INVITE_ROLE_LIST,
 } from '@/domain/userInvitations.js';
 import { firestoreUserInvitationsRepository } from '@/infra/repositories/firestoreUserInvitationsRepository.js';
+import { sendInvitationSignInLink } from '@/lib/firebase/auth.js';
+
+const INVITATION_LINK_REDIRECT = `${window.location.origin}/auth/email-link`;
 
 const ROLE_KEY = {
   super_admin: 'roleSuperAdmin',
@@ -58,6 +61,17 @@ export default function InviteAdminDialog({ open, onOpenChange, actor }) {
     try {
       const sanitized = sanitizeInviteInput(input);
       await firestoreUserInvitationsRepository.create(sanitized, actor);
+      try {
+        await sendInvitationSignInLink(sanitized.email, INVITATION_LINK_REDIRECT);
+      } catch (mailErr) {
+        // Invitation row was written successfully but Firebase rejected the
+        // email send. Surface a distinct error so the operator knows the
+        // invitation is live and can be retried via the "Resend link" action.
+        console.error('[AMS invite] sendSignInLinkToEmail failed', mailErr);
+        setSubmitError(t('errInvitationLinkFailed'));
+        setBusy(false);
+        return;
+      }
       reset();
       onOpenChange(false);
     } catch (err) {

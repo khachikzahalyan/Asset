@@ -7,7 +7,7 @@
 
   "inviteCta": "Հրավիրել ադմինի",
   "inviteDialogTitle": "Հրավիրել ադմինի",
-  "inviteDialogDescription": "Մուտքագրեք Gmail-ը և ընտրեք դերը: Մուտքը Google-ով:",
+  "inviteDialogDescription": "Մուտքագրեք էլ. փոստը և ընտրեք դերը: Մենք կուղարկենք մուտքի հղում: Հղումը գործում է սահմանափակ ժամանակ — այն կարող եք կրկին ուղարկել սպասող ցուցակից:",
 
   "formEmailLabel": "Էլ. փոստ",
   "formEmailPlaceholder": "name@gmail.com",
@@ -25,12 +25,15 @@
   "btnCancel": "Չեղարկել",
 
   "toastInvited": "Հրավերն ուղարկվեց {{email}}-ին",
+  "toastLinkResent": "Մուտքի հղումը կրկին ուղարկվեց {{email}}-ին",
   "toastInviteRevoked": "{{email}}-ի հրավերը հետ կանչվեց",
   "toastRoleChanged": "{{email}}-ի դերը փոխվեց",
   "toastDeactivated": "{{email}} օգտատերը ապաակտիվացվեց",
   "toastActivated": "{{email}} օգտատերը ակտիվացվեց",
 
   "errInviteExists": "Այս էլ. փոստի համար արդեն կա հրավեր կամ ակտիվ օգտատեր:",
+  "errInvitationLinkFailed": "Հրավերը ստեղծվեց, սակայն չհաջողվեց ուղարկել մուտքի հղումը: Օգտագործեք «Կրկին ուղարկել հղումը»:",
+  "errResendLinkFailed": "Չհաջողվեց ուղարկել հղումը: Կրկին փորձեք:",
   "errEmailRequired": "Մուտքագրեք էլ. փոստը:",
   "errEmailInvalid": "Սխալ էլ. փոստ:",
   "errRoleRequired": "Ընտրեք դերը:",
@@ -56,6 +59,8 @@
   "actionsDeactivate": "Ապաակտիվացնել",
   "actionsActivate": "Ակտիվացնել",
   "actionsRevoke": "Հետ կանչել",
+  "actionsResendLink": "Կրկին ուղարկել հղումը",
+  "actionsResending": "Ուղարկվում է…",
 
   "emptyActiveUsers": "Դեռ ադմիններ չկան:",
   "emptyPendingInvitations": "Սպասող հրավերներ չկան:",

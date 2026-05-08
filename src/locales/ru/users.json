@@ -7,7 +7,7 @@
 
   "inviteCta": "Пригласить администратора",
   "inviteDialogTitle": "Пригласить администратора",
-  "inviteDialogDescription": "Введите Gmail и выберите роль. Пользователь сможет войти через Google.",
+  "inviteDialogDescription": "Введите e-mail и выберите роль. Мы отправим приглашённому ссылку для входа на этот адрес. Ссылка действительна ограниченное время — её можно повторно отправить из списка ожидающих.",
 
   "formEmailLabel": "E-mail",
   "formEmailPlaceholder": "name@gmail.com",
@@ -25,12 +25,15 @@
   "btnCancel": "Отмена",
 
   "toastInvited": "Приглашение отправлено для {{email}}",
+  "toastLinkResent": "Ссылка повторно отправлена на {{email}}",
   "toastInviteRevoked": "Приглашение для {{email}} отозвано",
   "toastRoleChanged": "Роль для {{email}} изменена",
   "toastDeactivated": "Пользователь {{email}} деактивирован",
   "toastActivated": "Пользователь {{email}} активирован",
 
   "errInviteExists": "Для этого e-mail уже есть приглашение или активный пользователь.",
+  "errInvitationLinkFailed": "Приглашение создано, но не удалось отправить письмо со ссылкой. Используйте «Отправить ссылку повторно».",
+  "errResendLinkFailed": "Не удалось отправить ссылку. Попробуйте ещё раз.",
   "errEmailRequired": "Укажите e-mail.",
   "errEmailInvalid": "Некорректный e-mail.",
   "errRoleRequired": "Выберите роль.",
@@ -56,6 +59,8 @@
   "actionsDeactivate": "Деактивировать",
   "actionsActivate": "Активировать",
   "actionsRevoke": "Отозвать",
+  "actionsResendLink": "Отправить ссылку повторно",
+  "actionsResending": "Отправка…",
 
   "emptyActiveUsers": "Пока нет администраторов.",
   "emptyPendingInvitations": "Нет ожидающих приглашений.",

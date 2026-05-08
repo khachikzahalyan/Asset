@@ -7,7 +7,7 @@
 
   "inviteCta": "Invite admin",
   "inviteDialogTitle": "Invite admin",
-  "inviteDialogDescription": "Enter a Gmail address and pick a role. They'll sign in via Google.",
+  "inviteDialogDescription": "Enter an email and pick a role. We'll send the invitee a sign-in link to that address. Links expire after a short period — you can resend from the pending list.",
 
   "formEmailLabel": "Email",
   "formEmailPlaceholder": "name@gmail.com",
@@ -25,12 +25,15 @@
   "btnCancel": "Cancel",
 
   "toastInvited": "Invitation sent to {{email}}",
+  "toastLinkResent": "Sign-in link resent to {{email}}",
   "toastInviteRevoked": "Invitation for {{email}} revoked",
   "toastRoleChanged": "Role for {{email}} changed",
   "toastDeactivated": "User {{email}} deactivated",
   "toastActivated": "User {{email}} activated",
 
   "errInviteExists": "An invitation or active user already exists for this email.",
+  "errInvitationLinkFailed": "Invitation created, but the sign-in email could not be sent. Use \"Resend link\".",
+  "errResendLinkFailed": "Could not send the link. Please try again.",
   "errEmailRequired": "Email is required.",
   "errEmailInvalid": "Invalid email address.",
   "errRoleRequired": "Pick a role.",
@@ -56,6 +59,8 @@
   "actionsDeactivate": "Deactivate",
   "actionsActivate": "Activate",
   "actionsRevoke": "Revoke",
+  "actionsResendLink": "Resend link",
+  "actionsResending": "Sending…",
 
   "emptyActiveUsers": "No admins yet.",
   "emptyPendingInvitations": "No invitations pending.",

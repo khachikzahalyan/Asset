@@ -30,6 +30,18 @@ export function sendEmployeeSignInLink(email, continueUrl) {
   return sendSignInLinkToEmail(auth, email, actionCodeSettings);
 }
 
+// Used when a super_admin sends an invitation. The recipient opens the link
+// on a different device/browser, so we deliberately do NOT cache the email
+// in the sender's localStorage — the EmailLinkLandingPage falls back to
+// asking the recipient for their email when nothing is cached.
+export function sendInvitationSignInLink(email, continueUrl) {
+  const actionCodeSettings = {
+    url: continueUrl,
+    handleCodeInApp: true,
+  };
+  return sendSignInLinkToEmail(auth, email, actionCodeSettings);
+}
+
 export function isEmailLink(href = window.location.href) {
   return isSignInWithEmailLink(auth, href);
 }
