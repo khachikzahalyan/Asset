@@ -106,7 +106,20 @@ service cloud.firestore {
 
     // ---- userInvitations ----
     match /userInvitations/{email} {
-      allow read: if isAdmin();
+      // Admins can read any invitation (Users page).
+      // The invitee themselves can read ONLY their own row — required so
+      // bootstrapFromInvitationIfEligible can run a transactional read of
+      // userInvitations/{email} on the very first sign-in, before they
+      // have a users/{uid} doc and therefore before they qualify as an
+      // admin under getRole(). The doc id IS the lowercased email, so
+      // matching email == request.auth.token.email.lower() lets us scope
+      // the self-read to a single document.
+      allow read: if isAdmin()
+                  || (
+                       request.auth != null
+                       && request.auth.token.email_verified == true
+                       && email == request.auth.token.email.lower()
+                     );
 
       allow create: if isSuperAdmin()
                     && request.resource.data.email == email
