@@ -42,6 +42,9 @@ const ADMIN_NAV = [
   { to: '/users', icon: UserCog, key: 'navUsers', roles: [ROLES.SUPER_ADMIN] },
   { to: '/audit', icon: ScrollText, key: 'navAuditLog', roles: [ROLES.SUPER_ADMIN] },
   { to: '/settings/asset-subtypes', icon: Settings, key: 'navAssetSubtypes', roles: [ROLES.SUPER_ADMIN] },
+  { to: '/settings/brands', icon: Tags, key: 'navBrands', roles: [ROLES.SUPER_ADMIN] },
+  { to: '/settings/models', icon: Boxes, key: 'navModels', roles: [ROLES.SUPER_ADMIN] },
+  { to: '/settings/notifications', icon: CircleDot, key: 'navNotificationSettings', roles: [ROLES.SUPER_ADMIN] },
 ];
 
 const EMPLOYEE_NAV = [{ to: '/me', icon: User, key: 'navMe', roles: [ROLES.EMPLOYEE] }];

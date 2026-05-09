@@ -17,6 +17,9 @@ export const ROUTES = Object.freeze({
   USERS: '/users',
   ASSET_SUBTYPES: '/settings/asset-subtypes',
   CATEGORIES: '/settings/categories',
+  BRANDS: '/settings/brands',
+  MODELS: '/settings/models',
+  NOTIFICATION_SETTINGS: '/settings/notifications',
 });
 
 export function branchDetailPath(id) {
@@ -68,4 +71,7 @@ export const ROUTE_TABLE = [
   { path: ROUTES.USERS, allowedRoles: [ROLES.SUPER_ADMIN] },
   { path: ROUTES.ASSET_SUBTYPES, allowedRoles: [ROLES.SUPER_ADMIN] },
   { path: ROUTES.CATEGORIES, allowedRoles: [ROLES.SUPER_ADMIN] },
+  { path: ROUTES.BRANDS, allowedRoles: [ROLES.SUPER_ADMIN] },
+  { path: ROUTES.MODELS, allowedRoles: [ROLES.SUPER_ADMIN] },
+  { path: ROUTES.NOTIFICATION_SETTINGS, allowedRoles: [ROLES.SUPER_ADMIN] },
 ];

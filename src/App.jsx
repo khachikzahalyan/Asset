@@ -16,6 +16,9 @@ import AssetDetailPage from '@/pages/AssetDetailPage.jsx';
 import UsersPage from '@/pages/UsersPage.jsx';
 import SubtypeManagementPage from '@/pages/SubtypeManagementPage.jsx';
 import CategoriesManagementPage from '@/pages/CategoriesManagementPage.jsx';
+import BrandsManagementPage from '@/pages/BrandsManagementPage.jsx';
+import ModelsManagementPage from '@/pages/ModelsManagementPage.jsx';
+import NotificationSettingsPage from '@/pages/NotificationSettingsPage.jsx';
 
 import AppShell from '@/components/layout/AppShell.jsx';
 import RequireAuth from '@/components/auth/RequireAuth.jsx';
@@ -124,6 +127,30 @@ export default function App() {
           element={
             <RoleGate roles={[ROLES.SUPER_ADMIN]}>
               <CategoriesManagementPage />
+            </RoleGate>
+          }
+        />
+        <Route
+          path="/settings/brands"
+          element={
+            <RoleGate roles={[ROLES.SUPER_ADMIN]}>
+              <BrandsManagementPage />
+            </RoleGate>
+          }
+        />
+        <Route
+          path="/settings/models"
+          element={
+            <RoleGate roles={[ROLES.SUPER_ADMIN]}>
+              <ModelsManagementPage />
+            </RoleGate>
+          }
+        />
+        <Route
+          path="/settings/notifications"
+          element={
+            <RoleGate roles={[ROLES.SUPER_ADMIN]}>
+              <NotificationSettingsPage />
             </RoleGate>
           }
         />
