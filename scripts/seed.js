@@ -387,6 +387,9 @@ const CATEGORY_SEEDS = [
     inventoryCodePrefix: '400',
     requiresMultilang: true,
     attachableTo: ['branch', 'warehouse', 'employee', 'department'],
+    // Devices receive an inventory code from `category_counters/device`.
+    assignsInventoryCode: true,
+    canHostLicense: true,
   },
   {
     id: 'furniture',
@@ -394,6 +397,9 @@ const CATEGORY_SEEDS = [
     inventoryCodePrefix: '500',
     requiresMultilang: true,
     attachableTo: ['branch', 'warehouse', 'employee', 'department'],
+    // Furniture receives an inventory code from `category_counters/furniture`.
+    assignsInventoryCode: true,
+    canHostLicense: false,
   },
   {
     id: 'license',
@@ -401,6 +407,10 @@ const CATEGORY_SEEDS = [
     inventoryCodePrefix: 'LIC',
     requiresMultilang: true,
     attachableTo: ['asset', 'employee'],
+    // Licenses are identified by license key, not inventory code. The
+    // counter doc is still initialized for shape parity but never read.
+    assignsInventoryCode: false,
+    canHostLicense: false,
   },
 ];
 
@@ -449,6 +459,12 @@ async function bootstrapCategories(db, auth) {
         inventoryCodePrefix: seed.inventoryCodePrefix,
         requiresMultilang: seed.requiresMultilang,
         attachableTo: seed.attachableTo,
+        // Explicit boolean — the rules layer enforces `is bool` on create.
+        // Without this the field would be `undefined` in Firestore and the
+        // downstream `category.assignsInventoryCode === true` check would
+        // silently treat the category as "no inventory code".
+        assignsInventoryCode: seed.assignsInventoryCode,
+        canHostLicense: Boolean(seed.canHostLicense),
         isActive: true,
         createdBy: actorUid,
         updatedBy: actorUid,
@@ -472,6 +488,7 @@ async function bootstrapCategories(db, auth) {
           inventoryCodePrefix: seed.inventoryCodePrefix,
           requiresMultilang: seed.requiresMultilang,
           attachableTo: seed.attachableTo,
+          assignsInventoryCode: seed.assignsInventoryCode,
           isActive: true,
         },
         at: FieldValue.serverTimestamp(),
