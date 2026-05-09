@@ -275,19 +275,19 @@ vi.mock('@/components/features/assets/AssetSelect.jsx', () => ({
 // --- Helpers ------------------------------------------------------------------
 
 function renderDialog(props = {}) {
-  const onClose = vi.fn();
+  const onOpenChange = vi.fn();
   const onSubmit = vi.fn(async () => {});
   const utils = render(
     <I18nextProvider i18n={i18n}>
       <AssetFormDialog
         open
-        onClose={onClose}
+        onOpenChange={onOpenChange}
         onSubmit={onSubmit}
         {...props}
       />
     </I18nextProvider>
   );
-  return { ...utils, onClose, onSubmit };
+  return { ...utils, onOpenChange, onSubmit };
 }
 
 beforeEach(async () => {
@@ -315,11 +315,19 @@ function getBranchSelect(id = 'asset-branch') {
 }
 
 describe('AssetFormDialog', () => {
-  it('renders in create mode with default Куда=СКЛАД and default status=warehouse', () => {
+  it('renders in create mode with default Куда=СКЛАД and default status=warehouse', async () => {
+    // T35: Group 3 (holder radios + status) is visible only after a category is picked.
+    const user = userEvent.setup({ delay: null });
     renderDialog();
 
     // Title is "Add asset" (i18n key addAsset).
     expect(screen.getByText(i18n.t('assets:addAsset'))).toBeInTheDocument();
+
+    // Pick a category to reveal Group 3.
+    await user.selectOptions(
+      screen.getByLabelText(i18n.t('assets:category')),
+      'cat_device'
+    );
 
     // Куда radio: СКЛАД is selected by default.
     const warehouseRadio = screen.getByRole('radio', {
@@ -346,7 +354,7 @@ describe('AssetFormDialog', () => {
     expect(getBranchSelect()).toBeInTheDocument();
   });
 
-  it('shows a plain <input> for name when the category is single-lang', async () => {
+  it('shows Brand and Model dropdowns (not a name field) when the category is single-lang (T35)', async () => {
     const user = userEvent.setup({ delay: null });
     renderDialog();
 
@@ -356,16 +364,19 @@ describe('AssetFormDialog', () => {
       'cat_device'
     );
 
-    // Name field is a single <input>, not three locale inputs.
-    const nameInput = screen.getByLabelText(i18n.t('assets:name'));
-    expect(nameInput.tagName).toBe('INPUT');
-
-    // No locale hint labels (RU / EN / HY) rendered.
-    // MultiLangInput renders three sub-inputs with placeholder/aria-label per locale.
+    // In the new form (T35), non-multilang categories show Brand + Model dropdowns
+    // instead of a plain name input. The MultiLangInput is not rendered either.
     expect(screen.queryByPlaceholderText(/RU/i)).not.toBeInTheDocument();
+    expect(document.querySelector('input[name="name.ru"]')).not.toBeInTheDocument();
+
+    // Brand and Model labels appear for device (non-multilang) category.
+    expect(screen.getByLabelText(i18n.t('assets:brandLabel'))).toBeInTheDocument();
+    expect(screen.getByLabelText(i18n.t('assets:modelLabel'))).toBeInTheDocument();
   });
 
-  it('switches name to MultiLangInput when a multi-lang category is picked', async () => {
+  it('switches name to MultiLangInput when a multi-lang category is picked (T35: requires subtype too)', async () => {
+    // T35: Group 2 (Identifiers) is visible only when BOTH category and subtype are set.
+    // The MultiLangInput appears there for multilang categories.
     const user = userEvent.setup({ delay: null });
     const { container } = renderDialog();
 
@@ -373,6 +384,11 @@ describe('AssetFormDialog', () => {
     await user.selectOptions(
       screen.getByLabelText(i18n.t('assets:category')),
       'cat_furniture'
+    );
+    // Also pick a subtype to reveal Group 2.
+    await user.selectOptions(
+      screen.getByLabelText(i18n.t('assets:subtype')),
+      'furniture_chair'
     );
 
     // MultiLangInput renders three inputs named `name.ru`, `name.en`, `name.hy`.
@@ -382,14 +398,14 @@ describe('AssetFormDialog', () => {
       expect(document.querySelector('input[name="name.en"]')).toBeInTheDocument();
       expect(document.querySelector('input[name="name.hy"]')).toBeInTheDocument();
     });
-    // The single-lang <input id="asset-name"> is gone.
+    // There is no single-lang <input id="asset-name"> for multilang categories.
     expect(document.getElementById('asset-name')).toBeNull();
     // container is referenced to avoid an unused-binding lint warning if any
     // future change drops the destructure.
     void container;
   });
 
-  it('switches back to single <input> when the category changes from multi-lang to single-lang', async () => {
+  it('shows Brand/Model dropdowns when the category changes from multi-lang to single-lang (T35)', async () => {
     const user = userEvent.setup({ delay: null });
     renderDialog();
 
@@ -403,14 +419,24 @@ describe('AssetFormDialog', () => {
       'cat_device'
     );
 
-    // The single-lang <input> reappears.
-    const nameInput = screen.getByLabelText(i18n.t('assets:name'));
-    expect(nameInput.tagName).toBe('INPUT');
+    // In the new form (T35), switching to a non-multilang category shows
+    // Brand + Model dropdowns (not a plain name input).
+    expect(screen.getByLabelText(i18n.t('assets:brandLabel'))).toBeInTheDocument();
+    expect(screen.getByLabelText(i18n.t('assets:modelLabel'))).toBeInTheDocument();
+    // MultiLangInput is gone.
+    expect(document.querySelector('input[name="name.ru"]')).not.toBeInTheDocument();
   });
 
   it('Куда=СОТРУДНИК hides BranchSelect and shows EmployeeSelect', async () => {
+    // T35: holder radios are in Group 3, visible only after a category is picked.
     const user = userEvent.setup({ delay: null });
     renderDialog();
+
+    // Pick a category first to reveal Group 3.
+    await user.selectOptions(
+      screen.getByLabelText(i18n.t('assets:category')),
+      'cat_device'
+    );
 
     // Switch Куда → СОТРУДНИК.
     await user.click(
@@ -433,8 +459,15 @@ describe('AssetFormDialog', () => {
   });
 
   it('Куда=ОТДЕЛ shows DepartmentSelect with the empty-state helper text', async () => {
+    // T35: holder radios are in Group 3, visible only after a category is picked.
     const user = userEvent.setup({ delay: null });
     renderDialog();
+
+    // Pick a category first to reveal Group 3.
+    await user.selectOptions(
+      screen.getByLabelText(i18n.t('assets:category')),
+      'cat_device'
+    );
 
     await user.click(
       screen.getByRole('radio', { name: i18n.t('assets:holderDepartment') })
@@ -450,20 +483,29 @@ describe('AssetFormDialog', () => {
     expect(document.getElementById('asset-branch')).toBeNull();
   });
 
-  it('shows errorRequired for both categoryId and name when both are blank on submit', async () => {
+  it('shows errorRequired for categoryId and subtypeId when both are blank on submit', async () => {
+    // T35: clicking Save without a category produces errorRequired for
+    // categoryId and subtypeId (two errors minimum).
     const user = userEvent.setup({ delay: null });
     const { onSubmit } = renderDialog();
 
-    // Click Save without picking a category or typing a name.
-    await user.click(screen.getByRole('button', { name: i18n.t('common:save') }));
+    // Click Save & add another without picking a category (create mode button).
+    await user.click(screen.getByRole('button', { name: i18n.t('assets:saveAndAddAnother') }));
 
     const errors = await screen.findAllByText(i18n.t('assets:errorRequired'));
     expect(errors.length).toBeGreaterThanOrEqual(2);
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it('Status filter — Куда=СКЛАД shows only isAssignable===false statuses', () => {
+  it('Status filter — Куда=СКЛАД shows only isAssignable===false statuses', async () => {
+    // T35: status select is in Group 3, only visible once a category is set.
+    const user = userEvent.setup({ delay: null });
     renderDialog();
+
+    await user.selectOptions(
+      screen.getByLabelText(i18n.t('assets:category')),
+      'cat_device'
+    );
 
     const statusSelect = screen.getByLabelText(i18n.t('assets:status'));
     const opts = within(statusSelect).getAllByRole('option');
@@ -475,8 +517,14 @@ describe('AssetFormDialog', () => {
   });
 
   it('Status filter — Куда=СОТРУДНИК shows only isAssignable===true statuses', async () => {
+    // T35: need a category first, then switch to employee mode.
     const user = userEvent.setup({ delay: null });
     renderDialog();
+
+    await user.selectOptions(
+      screen.getByLabelText(i18n.t('assets:category')),
+      'cat_device'
+    );
 
     await user.click(
       screen.getByRole('radio', { name: i18n.t('assets:holderEmployee') })
@@ -491,24 +539,33 @@ describe('AssetFormDialog', () => {
   });
 
   it('Submit success calls onSubmit with sanitized payload and closes the dialog', async () => {
+    // T35: for non-multilang categories (e.g. cat_device), the form no longer
+    // shows a plain name input — brand + model replace it. Accordingly
+    // sanitizeAssetInput returns name: null for such categories.
+    // This test uses edit mode so the direct Save button is available.
     const user = userEvent.setup({ delay: null });
-    const { onSubmit, onClose } = renderDialog();
+    const { onSubmit, onOpenChange } = renderDialog({
+      asset: {
+        assetId: 'a_test',
+        categoryId: 'cat_device',
+        subtypeId: 'device_laptop',
+        name: null,
+        brandId: null,
+        modelId: null,
+        serialNumber: null,
+        statusId: 'warehouse',
+        assignedTo: { kind: 'warehouse', id: null },
+        branchId: null,
+        notes: null,
+        purchaseDate: null,
+        purchasePrice: null,
+        condition: 'new',
+        warrantyStart: null,
+        warrantyEnd: null,
+        isActive: true,
+      },
+    });
 
-    await user.selectOptions(
-      screen.getByLabelText(i18n.t('assets:category')),
-      'cat_device'
-    );
-    await user.selectOptions(
-      screen.getByLabelText(i18n.t('assets:subtype')),
-      'device_laptop'
-    );
-    await user.type(
-      screen.getByLabelText(i18n.t('assets:name')),
-      '  ThinkPad ноутбук  '
-    );
-    await user.type(screen.getByLabelText(i18n.t('assets:brand')), '  Lenovo  ');
-    await user.type(screen.getByLabelText(i18n.t('assets:model')), '  T14  ');
-    await user.type(screen.getByLabelText(i18n.t('assets:serialNumber')), '  ABC123  ');
     await user.selectOptions(getBranchSelect(), 'b_main');
 
     await user.click(screen.getByRole('button', { name: i18n.t('common:save') }));
@@ -518,12 +575,10 @@ describe('AssetFormDialog', () => {
     });
 
     const [payload, opts] = onSubmit.mock.calls[0];
-    // Sanitization trims free-text fields and normalizes ASCII fields.
+    // T35: name is null for non-multilang (device) categories — the composed
+    // display title comes from brand + model + category at the view layer.
     expect(payload.categoryId).toBe('cat_device');
-    expect(payload.name).toBe('ThinkPad ноутбук');
-    expect(payload.brand).toBe('Lenovo');
-    expect(payload.model).toBe('T14');
-    expect(payload.serialNumber).toBe('ABC123');
+    expect(payload.name).toBeNull();
     // Default Куда=СКЛАД, branchId set, assignedTo.kind=warehouse.
     expect(payload.assignedTo).toEqual({ kind: 'warehouse', id: null });
     expect(payload.branchId).toBe('b_main');
@@ -533,7 +588,7 @@ describe('AssetFormDialog', () => {
     expect(opts.category?.categoryId).toBe('cat_device');
 
     await waitFor(() => {
-      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(onOpenChange).toHaveBeenCalledWith(false);
     });
   });
 
@@ -545,7 +600,7 @@ describe('AssetFormDialog', () => {
 
     render(
       <I18nextProvider i18n={i18n}>
-        <AssetFormDialog open onClose={vi.fn()} onSubmit={onSubmit} />
+        <AssetFormDialog open onOpenChange={vi.fn()} onSubmit={onSubmit} />
       </I18nextProvider>
     );
 
@@ -557,9 +612,9 @@ describe('AssetFormDialog', () => {
       screen.getByLabelText(i18n.t('assets:subtype')),
       'device_laptop'
     );
-    await user.type(screen.getByLabelText(i18n.t('assets:name')), 'X');
+    // T35: device category has no name field; select branch to satisfy validation.
     await user.selectOptions(getBranchSelect(), 'b_main');
-    await user.click(screen.getByRole('button', { name: i18n.t('common:save') }));
+    await user.click(screen.getByRole('button', { name: i18n.t('assets:saveAndAddAnother') }));
 
     expect(
       await screen.findByText(i18n.t('assets:errorInventoryCodeTaken'))
@@ -574,7 +629,7 @@ describe('AssetFormDialog', () => {
 
     render(
       <I18nextProvider i18n={i18n}>
-        <AssetFormDialog open onClose={vi.fn()} onSubmit={onSubmit} />
+        <AssetFormDialog open onOpenChange={vi.fn()} onSubmit={onSubmit} />
       </I18nextProvider>
     );
 
@@ -586,9 +641,9 @@ describe('AssetFormDialog', () => {
       screen.getByLabelText(i18n.t('assets:subtype')),
       'device_laptop'
     );
-    await user.type(screen.getByLabelText(i18n.t('assets:name')), 'X');
+    // T35: device category has no name field; select branch to satisfy validation.
     await user.selectOptions(getBranchSelect(), 'b_main');
-    await user.click(screen.getByRole('button', { name: i18n.t('common:save') }));
+    await user.click(screen.getByRole('button', { name: i18n.t('assets:saveAndAddAnother') }));
 
     expect(
       await screen.findByText(i18n.t('assets:errorCounterMissing'))
@@ -603,7 +658,7 @@ describe('AssetFormDialog', () => {
 
     render(
       <I18nextProvider i18n={i18n}>
-        <AssetFormDialog open onClose={vi.fn()} onSubmit={onSubmit} />
+        <AssetFormDialog open onOpenChange={vi.fn()} onSubmit={onSubmit} />
       </I18nextProvider>
     );
 
@@ -615,9 +670,9 @@ describe('AssetFormDialog', () => {
       screen.getByLabelText(i18n.t('assets:subtype')),
       'device_laptop'
     );
-    await user.type(screen.getByLabelText(i18n.t('assets:name')), 'X');
+    // T35: device category has no name field; select branch to satisfy validation.
     await user.selectOptions(getBranchSelect(), 'b_main');
-    await user.click(screen.getByRole('button', { name: i18n.t('common:save') }));
+    await user.click(screen.getByRole('button', { name: i18n.t('assets:saveAndAddAnother') }));
 
     expect(
       await screen.findByText(i18n.t('assets:errorRequired'))
@@ -648,9 +703,8 @@ describe('AssetFormDialog', () => {
     renderDialog({ asset });
 
     expect(screen.getByText(i18n.t('assets:editAsset'))).toBeInTheDocument();
-    expect(screen.getByLabelText(i18n.t('assets:name'))).toHaveValue('ThinkPad');
-    expect(screen.getByLabelText(i18n.t('assets:brand'))).toHaveValue('Lenovo');
-    expect(screen.getByLabelText(i18n.t('assets:model'))).toHaveValue('T14');
+    // T35: cat_device is non-multilang, so there is no name field. Instead,
+    // serialNumber from Group 2 Identifiers is verified.
     expect(screen.getByLabelText(i18n.t('assets:serialNumber'))).toHaveValue('ABC123');
     // categoryId / statusId selects are disabled in edit mode.
     expect(screen.getByLabelText(i18n.t('assets:category'))).toBeDisabled();
@@ -660,14 +714,14 @@ describe('AssetFormDialog', () => {
 
 describe('AssetFormDialog — subtype/condition/warranty/license-asset (Wave A)', () => {
   function renderD(props = {}) {
-    const onClose = vi.fn();
+    const onOpenChange = vi.fn();
     const onSubmit = vi.fn(async () => {});
     const utils = render(
       <I18nextProvider i18n={i18n}>
-        <AssetFormDialog open onClose={onClose} onSubmit={onSubmit} {...props} />
+        <AssetFormDialog open onOpenChange={onOpenChange} onSubmit={onSubmit} {...props} />
       </I18nextProvider>
     );
-    return { ...utils, onClose, onSubmit };
+    return { ...utils, onOpenChange, onSubmit };
   }
 
   it('subtype select is disabled until a category is picked', () => {
@@ -703,9 +757,9 @@ describe('AssetFormDialog — subtype/condition/warranty/license-asset (Wave A)'
       screen.getByLabelText(i18n.t('assets:category')),
       'cat_device'
     );
-    await user.type(screen.getByLabelText(i18n.t('assets:name')), 'X');
+    // T35: device category has no name field; select branch only.
     await user.selectOptions(getBranchSelect(), 'b_main');
-    await user.click(screen.getByRole('button', { name: i18n.t('common:save') }));
+    await user.click(screen.getByRole('button', { name: i18n.t('assets:saveAndAddAnother') }));
 
     // The subtype field renders its own errorRequired message.
     const subtypeSel = screen.getByLabelText(i18n.t('assets:subtype'));
@@ -713,8 +767,16 @@ describe('AssetFormDialog — subtype/condition/warranty/license-asset (Wave A)'
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it('default condition is "new"', () => {
+  it('default condition is "new" (T35: requires a category to be selected first)', async () => {
+    // T35: condition radios are in Group 4, only visible once a category is set.
+    const user = userEvent.setup({ delay: null });
     renderD();
+
+    await user.selectOptions(
+      screen.getByLabelText(i18n.t('assets:category')),
+      'cat_device'
+    );
+
     const newRadio = screen.getByRole('radio', { name: i18n.t('assets:conditionNew') });
     expect(newRadio).toBeChecked();
     const usedRadio = screen.getByRole('radio', { name: i18n.t('assets:conditionUsed') });
@@ -722,8 +784,14 @@ describe('AssetFormDialog — subtype/condition/warranty/license-asset (Wave A)'
   });
 
   it('switching condition to "used" hides the warranty inputs', async () => {
+    // T35: condition radios and warranty fields are in Group 4, visible once category is set.
     const user = userEvent.setup({ delay: null });
     renderD();
+
+    await user.selectOptions(
+      screen.getByLabelText(i18n.t('assets:category')),
+      'cat_device'
+    );
 
     // Warranty inputs visible by default (condition=new).
     expect(screen.getByLabelText(i18n.t('assets:warrantyStart'))).toBeInTheDocument();
@@ -747,7 +815,7 @@ describe('AssetFormDialog — subtype/condition/warranty/license-asset (Wave A)'
       screen.getByLabelText(i18n.t('assets:subtype')),
       'device_laptop'
     );
-    await user.type(screen.getByLabelText(i18n.t('assets:name')), 'X');
+    // T35: device category has no name field.
     await user.selectOptions(getBranchSelect(), 'b_main');
 
     const startInput = screen.getByLabelText(i18n.t('assets:warrantyStart'));
@@ -755,7 +823,7 @@ describe('AssetFormDialog — subtype/condition/warranty/license-asset (Wave A)'
     await user.type(startInput, '2027-01-01');
     await user.type(endInput, '2026-01-01');
 
-    await user.click(screen.getByRole('button', { name: i18n.t('common:save') }));
+    await user.click(screen.getByRole('button', { name: i18n.t('assets:saveAndAddAnother') }));
 
     expect(
       await screen.findByText(i18n.t('assets:errorWarrantyEndBeforeStart'))
@@ -860,14 +928,14 @@ describe('AssetFormDialog — subtype/condition/warranty/license-asset (Wave A)'
 
 describe('AssetFormDialog — inline subtype creation (Wave A.6)', () => {
   function renderD(props = {}) {
-    const onClose = vi.fn();
+    const onOpenChange = vi.fn();
     const onSubmit = vi.fn(async () => {});
     const utils = render(
       <I18nextProvider i18n={i18n}>
-        <AssetFormDialog open onClose={onClose} onSubmit={onSubmit} {...props} />
+        <AssetFormDialog open onOpenChange={onOpenChange} onSubmit={onSubmit} {...props} />
       </I18nextProvider>
     );
-    return { ...utils, onClose, onSubmit };
+    return { ...utils, onOpenChange, onSubmit };
   }
 
   it('shows the "+ Добавить категорию" button for super_admin (next to the subtype select) (Wave A.7)', () => {

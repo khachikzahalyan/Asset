@@ -18,6 +18,7 @@ import { localize } from '@/lib/localize.js';
  *   onChange: (assetId: string) => void,
  *   excludeAssetId?: string,
  *   restrictToCategoryIds?: string[],
+ *   requireCanHostLicense?: boolean,
  *   disabled?: boolean,
  *   placeholder?: string,
  *   id?: string,
@@ -31,6 +32,7 @@ export default function AssetSelect({
   onChange,
   excludeAssetId = '',
   restrictToCategoryIds = ['device'],
+  requireCanHostLicense = false,
   disabled = false,
   placeholder,
   id,
@@ -42,18 +44,23 @@ export default function AssetSelect({
   const { data: assets } = useAssets();
   const { data: categories } = useCategories();
 
+  const categoryById = useMemo(() => {
+    const m = new Map();
+    for (const c of categories || []) m.set(c.categoryId ?? c.id, c);
+    return m;
+  }, [categories]);
+
   const options = useMemo(() => {
     return (assets || [])
       .filter((a) => a && a.isActive !== false)
       .filter((a) => restrictToCategoryIds.includes(a.categoryId))
-      .filter((a) => a.assetId !== excludeAssetId);
-  }, [assets, restrictToCategoryIds, excludeAssetId]);
-
-  const categoryById = useMemo(() => {
-    const m = new Map();
-    for (const c of categories || []) m.set(c.categoryId, c);
-    return m;
-  }, [categories]);
+      .filter((a) => a.assetId !== excludeAssetId)
+      .filter((a) => {
+        if (!requireCanHostLicense) return true;
+        const cat = categoryById.get(a.categoryId);
+        return Boolean(cat?.canHostLicense);
+      });
+  }, [assets, restrictToCategoryIds, excludeAssetId, requireCanHostLicense, categoryById]);
 
   return (
     <select
