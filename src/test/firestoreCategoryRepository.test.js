@@ -165,6 +165,7 @@ describe('firestoreCategoryRepository', () => {
         name: { ru: 'Мебель', en: 'Furniture', hy: 'Կահույք' },
         inventoryCodePrefix: '500',
         requiresMultilang: true,
+        assignsInventoryCode: true,
         isActive: true,
       });
 
@@ -642,5 +643,68 @@ describe('firestoreCategoryRepository', () => {
       const unsub = subscribeCategory('device', onData);
       expect(unsub).toBe(mocks.onSnapshotUnsub);
     });
+  });
+});
+
+describe('firestoreCategoryRepository — assignsInventoryCode persistence', () => {
+  it('writes assignsInventoryCode=true on createCategory by default', async () => {
+    await createCategory(
+      {
+        name: { ru: 'X', en: 'X', hy: 'X' },
+        inventoryCodePrefix: 'X1',
+        attachableTo: ['warehouse'],
+      },
+      { uid: 'u1', role: 'super_admin' }
+    );
+    const catSet = mocks.capturedTx.sets.find(
+      (s) => s.data?.inventoryCodePrefix === 'X1'
+    );
+    expect(catSet).toBeDefined();
+    expect(catSet.data.assignsInventoryCode).toBe(true);
+  });
+
+  it('persists assignsInventoryCode=false when caller provides it', async () => {
+    await createCategory(
+      {
+        name: { ru: 'License', en: 'License', hy: 'License' },
+        inventoryCodePrefix: 'LIC',
+        attachableTo: ['warehouse', 'employee'],
+        requiresMultilang: false,
+        assignsInventoryCode: false,
+      },
+      { uid: 'u1', role: 'super_admin' }
+    );
+    const catSet = mocks.capturedTx.sets.find(
+      (s) => s.data?.inventoryCodePrefix === 'LIC'
+    );
+    expect(catSet).toBeDefined();
+    expect(catSet.data.assignsInventoryCode).toBe(false);
+  });
+
+  it('updateCategory passes assignsInventoryCode through', async () => {
+    const before = {
+      categoryId: 'cat1',
+      name: { ru: 'X', en: 'X', hy: 'X' },
+      inventoryCodePrefix: 'X1',
+      requiresMultilang: true,
+      attachableTo: ['warehouse'],
+      assignsInventoryCode: true,
+      isActive: true,
+    };
+    await updateCategory(
+      'cat1',
+      {
+        name: { ru: 'X', en: 'X', hy: 'X' },
+        inventoryCodePrefix: 'X1',
+        requiresMultilang: true,
+        attachableTo: ['warehouse'],
+        assignsInventoryCode: false,
+        isActive: true,
+      },
+      before,
+      { uid: 'u1', role: 'super_admin' }
+    );
+    expect(mocks.capturedTx.updates).toHaveLength(1);
+    expect(mocks.capturedTx.updates[0].data.assignsInventoryCode).toBe(false);
   });
 });

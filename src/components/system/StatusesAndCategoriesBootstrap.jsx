@@ -10,7 +10,7 @@ import { firestoreCategoryRepository } from '@/infra/repositories/firestoreCateg
 import { ROLES } from '@/domain/roles.js';
 import { db } from '@/lib/firebase/index.js';
 import { buildAuditLog, newAuditLogRef } from '@/lib/audit/auditHelper.js';
-import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { doc, getDoc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 
 /**
  * Asset-status seeds — kept verbatim in lockstep with `scripts/seed.js`
@@ -77,6 +77,10 @@ const CATEGORY_SEEDS = [
     inventoryCodePrefix: '400',
     requiresMultilang: true,
     attachableTo: ['branch', 'warehouse', 'employee', 'department'],
+    // Devices receive an inventory code from `category_counters/device`.
+    assignsInventoryCode: true,
+    // Device assets can act as the host target when assigning a license.
+    canHostLicense: true,
   },
   {
     id: 'furniture',
@@ -84,6 +88,9 @@ const CATEGORY_SEEDS = [
     inventoryCodePrefix: '500',
     requiresMultilang: true,
     attachableTo: ['branch', 'warehouse', 'employee', 'department'],
+    // Furniture receives an inventory code from `category_counters/furniture`.
+    assignsInventoryCode: true,
+    canHostLicense: false,
   },
   {
     id: 'license',
@@ -91,6 +98,9 @@ const CATEGORY_SEEDS = [
     inventoryCodePrefix: 'LIC',
     requiresMultilang: true,
     attachableTo: ['asset', 'employee'],
+    // Licenses are identified by license key, not inventory code.
+    assignsInventoryCode: false,
+    canHostLicense: false,
   },
 ];
 
@@ -193,10 +203,37 @@ export default function StatusesAndCategoriesBootstrap() {
     const needStatuses = statuses.length === 0;
     const needCategories = categories.length === 0;
     const needSubtypes = subtypes.length === 0;
-    if (!needStatuses && !needCategories && !needSubtypes) return;
 
     attempted.current = true;
     const actor = { uid: user.uid, role };
+
+    // Phase 1.5 extensions — run unconditionally, best-effort, non-blocking.
+    ensureNotificationSettings(actor).catch((err) => {
+      console.warn(
+        '[AMS] notification settings bootstrap skipped:',
+        err?.code ?? err?.message ?? err
+      );
+    });
+    ensureLicenseCategoryFlag().catch((err) => {
+      console.warn(
+        '[AMS] license category flag bootstrap skipped:',
+        err?.code ?? err?.message ?? err
+      );
+    });
+    ensureLicenseCategoryAttachableTo().catch((err) => {
+      console.warn(
+        '[AMS] license category attachableTo bootstrap skipped:',
+        err?.code ?? err?.message ?? err
+      );
+    });
+    ensureCategoryCanHostLicense().catch((err) => {
+      console.warn(
+        '[AMS] category canHostLicense bootstrap skipped:',
+        err?.code ?? err?.message ?? err
+      );
+    });
+
+    if (!needStatuses && !needCategories && !needSubtypes) return;
 
     void seedCatalogs({
       actor,
@@ -264,6 +301,12 @@ async function seedCatalogs({ actor, needStatuses, needCategories, needSubtypes 
             inventoryCodePrefix: seed.inventoryCodePrefix,
             requiresMultilang: seed.requiresMultilang,
             attachableTo: seed.attachableTo,
+            // Explicit so sanitizeCategoryInput doesn't silently default
+            // license to `true` (its undefined-default branch). Without
+            // this, license categories would be marked as inventory-code
+            // assigning, which is the opposite of the domain intent.
+            assignsInventoryCode: seed.assignsInventoryCode,
+            canHostLicense: Boolean(seed.canHostLicense),
             isActive: true,
           },
           actor,
@@ -317,6 +360,85 @@ async function seedCatalogs({ actor, needStatuses, needCategories, needSubtypes 
     if (added > 0) {
       console.info(`[AMS] asset_subtypes bootstrap: ${added} created`);
     }
+  }
+}
+
+/**
+ * Idempotent best-effort bootstrap for /settings/notifications.
+ * Creates the doc with a 30-day default if it does not exist yet.
+ * Must NOT block the caller — wrap call site in try/catch.
+ *
+ * @param {{ uid: string, role: string }} actor
+ */
+export async function ensureNotificationSettings(actor) {
+  const ref = doc(db, 'settings', 'notifications');
+  const snap = await getDoc(ref);
+  if (snap.exists()) return;
+  await setDoc(ref, {
+    licenseExpiryWarningDays: 30,
+    updatedAt: serverTimestamp(),
+    updatedBy: actor?.uid ?? 'system',
+  });
+}
+
+/**
+ * Idempotent best-effort bootstrap for the license category flag.
+ * Patches /categories/license with `{ assignsInventoryCode: false }` if the
+ * doc exists but the flag is not already false.
+ * Must NOT block the caller — wrap call site in try/catch.
+ */
+export async function ensureLicenseCategoryFlag() {
+  const ref = doc(db, 'categories', 'license');
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+  const data = snap.data();
+  if (data.assignsInventoryCode === false) return;
+  await updateDoc(ref, { assignsInventoryCode: false });
+}
+
+/**
+ * Idempotent best-effort bootstrap for the license category's `attachableTo`.
+ * Patches /categories/license with `{ attachableTo: ['asset', 'employee'] }`
+ * if the field is missing or contains any of the forbidden kinds
+ * (warehouse, branch, department).
+ * Must NOT block the caller — wrap call site in try/catch.
+ */
+export async function ensureLicenseCategoryAttachableTo() {
+  const ref = doc(db, 'categories', 'license');
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+  const data = snap.data();
+  const CORRECT = ['asset', 'employee'];
+  const current = Array.isArray(data.attachableTo) ? data.attachableTo : null;
+  const alreadyCorrect =
+    current !== null &&
+    current.length === CORRECT.length &&
+    CORRECT.every((k) => current.includes(k));
+  if (alreadyCorrect) return;
+  await updateDoc(ref, { attachableTo: CORRECT });
+}
+
+/**
+ * Idempotent best-effort bootstrap for `canHostLicense` on the three base
+ * categories. Patches:
+ *   - /categories/device    → canHostLicense: true  (if missing)
+ *   - /categories/furniture → canHostLicense: false (if missing)
+ *   - /categories/license   → canHostLicense: false (if missing)
+ * Must NOT block the caller — wrap call site in try/catch.
+ */
+export async function ensureCategoryCanHostLicense() {
+  const patches = [
+    { id: 'device',    canHostLicense: true  },
+    { id: 'furniture', canHostLicense: false },
+    { id: 'license',   canHostLicense: false },
+  ];
+  for (const { id, canHostLicense } of patches) {
+    const ref = doc(db, 'categories', id);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) continue;
+    const data = snap.data();
+    if (data.canHostLicense === canHostLicense) continue;
+    await updateDoc(ref, { canHostLicense });
   }
 }
 

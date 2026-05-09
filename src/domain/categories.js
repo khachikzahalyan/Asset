@@ -40,6 +40,15 @@ import { ASSIGNMENT_KIND_LIST } from '@/domain/assets.js';
  *   Subset of ASSIGNMENT_KIND_LIST. Default holder targets offered when a
  *   sub-type is created under this category. Sub-types may narrow this set
  *   but never widen it.
+ * @property {boolean} assignsInventoryCode
+ *   When true, an asset created in this category gets an inventory code
+ *   from `category_counters/{categoryId}` and the form shows the preview.
+ *   When false (license), the asset is written with `inventoryCode: null`
+ *   and the counter is not touched.
+ * @property {boolean} canHostLicense
+ *   When true, assets in this category can be the target device when a
+ *   license is assigned to an asset (kind='asset'). Only the `device`
+ *   base category has this set to true.
  * @property {boolean} isActive
  * @property {import('firebase/firestore').Timestamp} createdAt
  * @property {string} createdBy
@@ -53,6 +62,11 @@ import { ASSIGNMENT_KIND_LIST } from '@/domain/assets.js';
  * @property {string} [inventoryCodePrefix]
  * @property {boolean} [requiresMultilang]
  * @property {string[]} [attachableTo]
+ * @property {boolean} [assignsInventoryCode]
+ * @property {boolean} [canHostLicense]
+ *   When true, assets in this category may act as the host device for a
+ *   license. Defaults to false. Only the `device` seed category ships with
+ *   true; furniture and license categories are false.
  * @property {boolean} [isActive]
  */
 
@@ -150,6 +164,8 @@ export function emptyCategoryInput() {
     inventoryCodePrefix: '',
     requiresMultilang: true,
     attachableTo: [],
+    assignsInventoryCode: true,
+    canHostLicense: false,
     isActive: true,
   };
 }
@@ -214,6 +230,11 @@ export function sanitizeCategoryInput(input) {
     inventoryCodePrefix: prefixRaw,
     requiresMultilang,
     attachableTo,
+    assignsInventoryCode:
+      raw.assignsInventoryCode === undefined
+        ? true
+        : Boolean(raw.assignsInventoryCode),
+    canHostLicense: raw.canHostLicense === undefined ? false : Boolean(raw.canHostLicense),
     isActive: raw.isActive === undefined ? true : Boolean(raw.isActive),
   };
 }

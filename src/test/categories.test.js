@@ -31,6 +31,8 @@ describe('categories domain', () => {
       inventoryCodePrefix: '',
       requiresMultilang: true,
       attachableTo: [],
+      assignsInventoryCode: true,
+      canHostLicense: false,
       isActive: true,
     });
   });
@@ -66,6 +68,8 @@ describe('categories domain', () => {
         inventoryCodePrefix: 'LIC',
         requiresMultilang: true,
         attachableTo: [],
+        assignsInventoryCode: true,
+        canHostLicense: false,
         isActive: true,
       });
     });
@@ -131,6 +135,8 @@ describe('categories domain', () => {
         inventoryCodePrefix: '',
         requiresMultilang: true,
         attachableTo: [],
+        assignsInventoryCode: true,
+        canHostLicense: false,
         isActive: true,
       });
     });
@@ -281,5 +287,81 @@ describe('categories domain', () => {
       });
       expect(errs.attachableTo).toBeUndefined();
     });
+  });
+});
+
+describe('categories — canHostLicense', () => {
+  it('emptyCategoryInput defaults canHostLicense to false', () => {
+    expect(emptyCategoryInput().canHostLicense).toBe(false);
+  });
+
+  it('sanitizeCategoryInput defaults canHostLicense to false when missing', () => {
+    const out = sanitizeCategoryInput({
+      name: { ru: 'X', en: 'X', hy: 'X' },
+      inventoryCodePrefix: 'A1',
+      attachableTo: ['warehouse'],
+    });
+    expect(out.canHostLicense).toBe(false);
+  });
+
+  it('sanitizeCategoryInput preserves canHostLicense: true', () => {
+    const out = sanitizeCategoryInput({
+      name: { ru: 'Device', en: 'Device', hy: 'Device' },
+      inventoryCodePrefix: '400',
+      attachableTo: ['warehouse'],
+      canHostLicense: true,
+    });
+    expect(out.canHostLicense).toBe(true);
+  });
+
+  it('sanitizeCategoryInput coerces truthy/falsy values to boolean', () => {
+    expect(sanitizeCategoryInput({ canHostLicense: 1 }).canHostLicense).toBe(true);
+    expect(sanitizeCategoryInput({ canHostLicense: 0 }).canHostLicense).toBe(false);
+    expect(sanitizeCategoryInput({ canHostLicense: false }).canHostLicense).toBe(false);
+  });
+});
+
+describe('categories — assignsInventoryCode', () => {
+  it('emptyCategoryInput defaults assignsInventoryCode to true', () => {
+    expect(emptyCategoryInput().assignsInventoryCode).toBe(true);
+  });
+
+  it('sanitizeCategoryInput coerces missing flag to true', () => {
+    const sanitized = sanitizeCategoryInput({
+      name: { ru: 'X', en: 'X', hy: 'X' },
+      inventoryCodePrefix: 'X1',
+      attachableTo: ['warehouse'],
+    });
+    expect(sanitized.assignsInventoryCode).toBe(true);
+  });
+
+  it('sanitizeCategoryInput preserves false', () => {
+    const sanitized = sanitizeCategoryInput({
+      name: { ru: 'License', en: 'License', hy: 'License' },
+      inventoryCodePrefix: 'LIC',
+      attachableTo: ['warehouse', 'employee'],
+      requiresMultilang: false,
+      assignsInventoryCode: false,
+    });
+    expect(sanitized.assignsInventoryCode).toBe(false);
+  });
+
+  it('sanitizeCategoryInput coerces truthy/falsy values to boolean', () => {
+    expect(
+      sanitizeCategoryInput({
+        name: { ru: 'X', en: 'X', hy: 'X' },
+        inventoryCodePrefix: 'X1',
+        attachableTo: ['warehouse'],
+        assignsInventoryCode: 0,
+      }).assignsInventoryCode
+    ).toBe(false);
+    expect(
+      sanitizeCategoryInput({
+        name: { ru: 'X', en: 'X', hy: 'X' },
+        inventoryCodePrefix: 'X1',
+        attachableTo: ['warehouse'],
+        assignsInventoryCode: 1,
+      }).assignsInventoryCode
+    ).toBe(true);
   });
 });

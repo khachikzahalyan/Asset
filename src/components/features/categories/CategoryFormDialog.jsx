@@ -66,6 +66,7 @@ export default function CategoryFormDialog({
       attachableTo: Array.isArray(category.attachableTo)
         ? category.attachableTo
         : [],
+      assignsInventoryCode: category.assignsInventoryCode !== false,
       isActive: category.isActive !== false,
     };
   }, [category]);
@@ -177,6 +178,24 @@ export default function CategoryFormDialog({
             {t('categories:fieldRequiresMultilang')}
           </Label>
         </div>
+
+        <label className="flex items-start gap-2 text-sm">
+          <input
+            id="category-assigns-inventory-code"
+            type="checkbox"
+            checked={form.assignsInventoryCode !== false}
+            onChange={(e) => setField('assignsInventoryCode', e.target.checked)}
+            aria-label={t('categories:assignsInventoryCodeLabel')}
+            disabled={submitting}
+            className="mt-0.5 h-4 w-4"
+          />
+          <span className="flex flex-col">
+            <span>{t('categories:assignsInventoryCodeLabel')}</span>
+            <span className="text-xs text-muted-foreground">
+              {t('categories:assignsInventoryCodeHint')}
+            </span>
+          </span>
+        </label>
 
         <div className="space-y-1.5">
           <Label>{t('categories:name')}</Label>

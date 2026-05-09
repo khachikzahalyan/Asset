@@ -75,6 +75,7 @@ function canCreateCategory({ auth, users, requestData, requestTime }) {
   if (typeof requestData.requiresMultilang !== 'boolean') return false;
   if (!isValidAttachableTo(requestData.attachableTo)) return false;
   if (typeof requestData.isActive !== 'boolean') return false;
+  if (typeof requestData.assignsInventoryCode !== 'boolean') return false;
   if (requestData.createdBy !== auth.uid) return false;
   if (requestData.updatedBy !== auth.uid) return false;
   if (requestData.createdAt !== requestTime) return false;
@@ -89,6 +90,7 @@ function canUpdateCategory({ auth, users, before, requestData, requestTime }) {
   if (typeof requestData.requiresMultilang !== 'boolean') return false;
   if (!isValidAttachableTo(requestData.attachableTo)) return false;
   if (typeof requestData.isActive !== 'boolean') return false;
+  if (typeof requestData.assignsInventoryCode !== 'boolean') return false;
   if (requestData.createdBy !== before.createdBy) return false;
   if (requestData.createdAt !== before.createdAt) return false;
   if (requestData.updatedBy !== auth.uid) return false;
@@ -158,6 +160,7 @@ const validCategory = {
   requiresMultilang: true,
   attachableTo: ['warehouse', 'employee', 'branch', 'department'],
   isActive: true,
+  assignsInventoryCode: true,
 };
 
 function createCategoryDoc(actorUid) {
@@ -661,5 +664,19 @@ describe('rules mirror — /category_counters delete', () => {
     ['anonymous', null, false],
   ])('%s delete counter -> %s (Wave A.9)', (_label, uid, expected) => {
     expect(canDeleteCategoryCounter({ auth: asAuth(uid), users })).toBe(expected);
+  });
+});
+
+describe('categories rules mirror — assignsInventoryCode is allowed', () => {
+  function isCategoryShapeValid(data) {
+    if (typeof data.assignsInventoryCode !== 'boolean') return false;
+    return true;
+  }
+
+  it('requires assignsInventoryCode to be a boolean on create', () => {
+    expect(isCategoryShapeValid({ assignsInventoryCode: true })).toBe(true);
+    expect(isCategoryShapeValid({ assignsInventoryCode: false })).toBe(true);
+    expect(isCategoryShapeValid({ assignsInventoryCode: 'yes' })).toBe(false);
+    expect(isCategoryShapeValid({})).toBe(false);
   });
 });

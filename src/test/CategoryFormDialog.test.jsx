@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { I18nextProvider } from 'react-i18next';
 
@@ -257,5 +257,62 @@ describe('CategoryFormDialog', () => {
     const alert = await screen.findByRole('alert');
     expect(within(alert).getByText(i18n.t('categories:errorIdConflict')))
       .toBeInTheDocument();
+  });
+});
+
+describe('CategoryFormDialog — assignsInventoryCode', () => {
+  it('renders the checkbox checked by default for new categories', () => {
+    renderDialog();
+    const checkbox = screen.getByLabelText(
+      i18n.t('categories:assignsInventoryCodeLabel')
+    );
+    expect(checkbox).toBeChecked();
+  });
+
+  it('reflects the existing assignsInventoryCode flag in edit mode', () => {
+    renderDialog({
+      category: {
+        categoryId: 'license',
+        name: { ru: 'Лицензия', en: 'License', hy: 'Լիցենզիա' },
+        inventoryCodePrefix: 'LIC',
+        requiresMultilang: false,
+        assignsInventoryCode: false,
+        attachableTo: ['employee', 'asset'],
+        isActive: true,
+      },
+    });
+    const checkbox = screen.getByLabelText(
+      i18n.t('categories:assignsInventoryCodeLabel')
+    );
+    expect(checkbox).not.toBeChecked();
+  });
+
+  it('emits assignsInventoryCode in onSubmit', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    renderDialog({ onSubmit });
+
+    // Toggle assignsInventoryCode off.
+    const checkbox = screen.getByLabelText(
+      i18n.t('categories:assignsInventoryCodeLabel')
+    );
+    fireEvent.click(checkbox); // toggle off (was true by default)
+
+    // Fill required fields so validation passes.
+    await user.click(
+      screen.getByLabelText(i18n.t('categories:fieldRequiresMultilang'))
+    ); // switch to single-lang mode
+    const inputs = screen.getAllByRole('textbox');
+    const nameInput = inputs.find((el) => el.getAttribute('name') === 'name' && !el.readOnly);
+    await user.type(nameInput, 'Licenses');
+    await user.type(
+      screen.getByLabelText(i18n.t('categories:inventoryCodePrefix')),
+      'LIC'
+    );
+    await user.click(screen.getByLabelText(i18n.t('assets:assignmentKindEmployee')));
+
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('categories:save') }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ assignsInventoryCode: false });
   });
 });

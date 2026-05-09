@@ -69,6 +69,7 @@ function auditSnapshot(obj) {
     name: obj.name ?? null,
     inventoryCodePrefix: obj.inventoryCodePrefix ?? null,
     requiresMultilang: obj.requiresMultilang ?? null,
+    assignsInventoryCode: obj.assignsInventoryCode ?? null,
     isActive: obj.isActive ?? null,
   };
 }
@@ -167,6 +168,7 @@ export async function createCategory(input, actor, options = {}) {
       name: sanitized.name,
       inventoryCodePrefix: sanitized.inventoryCodePrefix,
       requiresMultilang: sanitized.requiresMultilang,
+      assignsInventoryCode: sanitized.assignsInventoryCode,
       isActive: sanitized.isActive,
       createdAt: serverTimestamp(),
       createdBy: actor.uid,
@@ -241,6 +243,7 @@ export async function updateCategory(id, input, before, actor) {
       name: sanitized.name,
       inventoryCodePrefix: sanitized.inventoryCodePrefix,
       requiresMultilang: sanitized.requiresMultilang,
+      assignsInventoryCode: sanitized.assignsInventoryCode,
       isActive: sanitized.isActive,
       updatedAt: serverTimestamp(),
       updatedBy: actor.uid,
