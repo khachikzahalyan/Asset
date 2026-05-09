@@ -6,6 +6,7 @@
   "accountMenu": "Account menu",
   "save": "Save",
   "cancel": "Cancel",
+  "close": "Close",
   "delete": "Delete",
   "edit": "Edit",
   "create": "Create",
@@ -49,5 +50,8 @@
     "actionUnassign": "Unassigned",
     "actionTransfer": "Transferred",
     "actionStatusChange": "Status changed"
-  }
+  },
+  "navBrands": "Brands",
+  "navModels": "Models",
+  "navNotificationSettings": "Notifications"
 }

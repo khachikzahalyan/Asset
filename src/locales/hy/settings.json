@@ -4,5 +4,13 @@
   "allowedDomains": "Թույլատրված դոմեններ",
   "seedSuperAdmins": "Սկզբնական սուպեր ադմիններ",
   "general": "Ընդհանուր",
-  "notifications": "Ծանուցումներ"
+  "notifications": "Ծանուցումներ",
+  "notificationSettingsTitle": "Ծանուցումների կարգավորումներ",
+  "notificationSettingsSubtitle": "Նախազգուշացումների և ազդանշանների պարամետրեր",
+  "licenseExpiryWarningDaysLabel": "Քանի օր առաջ զգուշացնել ավարտվող լիցենզիայի մասին",
+  "licenseExpiryWarningDaysHint": "1-ից 365 օր: Օգտագործվում է ակտիվի էջի UI-բեյջի համար:",
+  "errorRangeOneToThreeSixtyFive": "Արժեքը պետք է լինի ամբողջ թիվ 1-ից 365 միջակայքում",
+  "errorRange": "Արժեքը պետք է լինի ամբողջ թիվ 1-ից 365 միջակայքում",
+  "saveButton": "Պահպանել",
+  "savedSuccessfully": "Պահված է"
 }

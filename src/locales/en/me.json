@@ -1,7 +1,11 @@
 {
-  "title": "My assets",
+  "colSince": "Since",
+  "errorLoading": "Failed to load your assets",
   "greeting": "Hello, {{name}}",
+  "issuedOn": "Issued on {{date}}",
+  "myAssetsTitle": "My Assets",
   "noAssignments": "You currently hold no assets.",
-  "viewAct": "View act",
-  "issuedOn": "Issued on {{date}}"
+  "notLinkedToEmployee": "Your account is not linked to an employee record. Contact an administrator.",
+  "title": "My assets",
+  "viewAct": "View act"
 }

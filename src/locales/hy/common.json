@@ -6,6 +6,7 @@
   "accountMenu": "Հաշվի մենյու",
   "save": "Պահպանել",
   "cancel": "Չեղարկել",
+  "close": "Փակել",
   "delete": "Ջնջել",
   "edit": "Խմբագրել",
   "create": "Ստեղծել",
@@ -49,5 +50,8 @@
     "actionUnassign": "Հանված է",
     "actionTransfer": "Փոխանցված է",
     "actionStatusChange": "Կարգավիճակի փոփոխություն"
-  }
+  },
+  "navBrands": "Բրենդներ",
+  "navModels": "Մոդելներ",
+  "navNotificationSettings": "Ծանուցումներ"
 }

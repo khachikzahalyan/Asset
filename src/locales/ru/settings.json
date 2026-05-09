@@ -4,5 +4,13 @@
   "allowedDomains": "Разрешённые домены",
   "seedSuperAdmins": "Стартовые суперадмины",
   "general": "Общие",
-  "notifications": "Уведомления"
+  "notifications": "Уведомления",
+  "notificationSettingsTitle": "Настройки уведомлений",
+  "notificationSettingsSubtitle": "Параметры предупреждений и алертов",
+  "licenseExpiryWarningDaysLabel": "За сколько дней предупреждать об истекающей лицензии",
+  "licenseExpiryWarningDaysHint": "От 1 до 365 дней. Используется для UI-бейджа на странице актива.",
+  "errorRangeOneToThreeSixtyFive": "Значение должно быть целым числом от 1 до 365",
+  "errorRange": "Значение должно быть целым числом от 1 до 365",
+  "saveButton": "Сохранить",
+  "savedSuccessfully": "Сохранено"
 }

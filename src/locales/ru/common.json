@@ -6,6 +6,7 @@
   "accountMenu": "Меню аккаунта",
   "save": "Сохранить",
   "cancel": "Отмена",
+  "close": "Закрыть",
   "delete": "Удалить",
   "edit": "Редактировать",
   "create": "Создать",
@@ -49,5 +50,8 @@
     "actionUnassign": "Откреплён",
     "actionTransfer": "Передан",
     "actionStatusChange": "Смена статуса"
-  }
+  },
+  "navBrands": "Бренды",
+  "navModels": "Модели",
+  "navNotificationSettings": "Уведомления"
 }

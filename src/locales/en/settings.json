@@ -4,5 +4,13 @@
   "allowedDomains": "Allowed domains",
   "seedSuperAdmins": "Seed super admins",
   "general": "General",
-  "notifications": "Notifications"
+  "notifications": "Notifications",
+  "notificationSettingsTitle": "Notification settings",
+  "notificationSettingsSubtitle": "Warning and alert parameters",
+  "licenseExpiryWarningDaysLabel": "Days before expiry to warn for licenses",
+  "licenseExpiryWarningDaysHint": "Between 1 and 365. Used for the asset-page UI badge.",
+  "errorRangeOneToThreeSixtyFive": "Value must be an integer between 1 and 365",
+  "errorRange": "Value must be an integer between 1 and 365",
+  "saveButton": "Save",
+  "savedSuccessfully": "Saved"
 }

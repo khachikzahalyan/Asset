@@ -47,5 +47,7 @@
   "errorCategoryReferenced": "Category is in use by {{assetCount}} asset(s). Remove or reassign those assets first.",
   "attachableToFieldset": "Attachable to",
   "attachableToHelp": "Pick which holder kinds assets in this category can be attached to. Sub-types may narrow this set but cannot widen it.",
-  "errorAttachableEmpty": "Pick at least one holder kind"
+  "errorAttachableEmpty": "Pick at least one holder kind",
+  "assignsInventoryCodeLabel": "Assets in this category get an inventory code",
+  "assignsInventoryCodeHint": "If off, assets in this category receive no inventory number (for example: licenses)"
 }
