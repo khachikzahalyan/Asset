@@ -30,6 +30,7 @@ import {
   runTransaction,
   serverTimestamp,
   Timestamp,
+  where,
 } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase/index.js';
@@ -39,9 +40,12 @@ import {
   formatInventoryCode,
   AssetCategoryInactiveError,
   AssetCounterMissingError,
+  AssetStatusFinalError,
+  assertNoAssignmentCycle,
 } from '@/domain/assets.js';
 import { AssetSubtypeInactiveError } from '@/domain/assetSubtypes.js';
 import { buildAuditLog, newAuditLogRef } from '@/lib/audit/auditHelper.js';
+import { sanitizeLicenseSecretValue } from '@/domain/licenseSecrets.js';
 
 // ---------------------------------------------------------------------------
 // Collection / doc refs
@@ -51,6 +55,7 @@ const ASSETS = 'assets';
 const CATEGORIES = 'categories';
 const CATEGORY_COUNTERS = 'category_counters';
 const ASSET_SUBTYPES = 'asset_subtypes';
+const ASSET_STATUSES = 'asset_statuses';
 
 function assetsCollection() {
   return collection(db, ASSETS);
@@ -70,6 +75,25 @@ function categoryCounterDoc(id) {
 
 function assetSubtypeDoc(id) {
   return doc(db, ASSET_SUBTYPES, id);
+}
+
+function assetStatusDoc(id) {
+  return doc(db, ASSET_STATUSES, id);
+}
+
+/**
+ * Inside a transaction, read the asset_statuses doc for `statusId` and
+ * return true if its `isFinal` flag is set.
+ *
+ * @param {import('firebase/firestore').Transaction} tx
+ * @param {string} statusId
+ * @returns {Promise<boolean>}
+ */
+async function isFinalStatus(tx, statusId) {
+  if (!statusId) return false;
+  const snap = await tx.get(assetStatusDoc(statusId));
+  if (!snap.exists()) return false;
+  return Boolean(snap.data()?.isFinal);
 }
 
 function snapshotToAsset(snap) {
@@ -100,8 +124,8 @@ function auditSnapshot(obj) {
     subtypeId: obj.subtypeId ?? null,
     statusId: obj.statusId ?? null,
     name: obj.name ?? null,
-    brand: obj.brand ?? null,
-    model: obj.model ?? null,
+    brandId: obj.brandId ?? null,
+    modelId: obj.modelId ?? null,
     serialNumber: obj.serialNumber ?? null,
     branchId: obj.branchId ?? null,
     assignedTo: obj.assignedTo ?? null,
@@ -111,6 +135,9 @@ function auditSnapshot(obj) {
     condition: obj.condition ?? null,
     warrantyStart: timestampToMillis(obj.warrantyStart),
     warrantyEnd: timestampToMillis(obj.warrantyEnd),
+    licenseType: obj.licenseType ?? null,
+    subscribedAt: timestampToMillis(obj.subscribedAt),
+    expiresAt: timestampToMillis(obj.expiresAt),
     isActive: obj.isActive ?? null,
   };
 }
@@ -156,6 +183,35 @@ export function subscribeAsset(id, onData, onError) {
   );
 }
 
+/**
+ * Subscribe to assets assigned to a specific employee
+ * (`assignedTo.kind === 'employee' && assignedTo.id === employeeId`),
+ * ordered by `inventoryCode ASC`.
+ *
+ * @param {string} employeeId
+ * @param {(items: import('@/domain/assets.js').Asset[]) => void} onData
+ * @param {(error: Error) => void} [onError]
+ * @returns {() => void} unsubscribe
+ */
+export function subscribeAssetsByEmployee(employeeId, onData, onError) {
+  const q = query(
+    assetsCollection(),
+    where('assignedTo.kind', '==', 'employee'),
+    where('assignedTo.id', '==', employeeId),
+    orderBy('inventoryCode', 'asc')
+  );
+  return onSnapshot(
+    q,
+    (snap) => {
+      const items = snap.docs.map((d) => ({ assetId: d.id, ...d.data() }));
+      onData(items);
+    },
+    (err) => {
+      if (onError) onError(err);
+    }
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Mutations
 // ---------------------------------------------------------------------------
@@ -191,8 +247,10 @@ export async function createAsset(input, actor, opts = {}) {
   const assetRef = doc(assetsCollection());
   const auditRef = newAuditLogRef();
   const catRef = categoryDoc(sanitized.categoryId);
-  const counterRef = categoryCounterDoc(sanitized.categoryId);
   const subtypeRef = assetSubtypeDoc(sanitized.subtypeId);
+
+  const categoryId = sanitized.categoryId;
+  const isLicense = categoryId === 'license';
 
   const purchaseDateTs = sanitized.purchaseDate
     ? Timestamp.fromDate(sanitized.purchaseDate)
@@ -204,31 +262,55 @@ export async function createAsset(input, actor, opts = {}) {
     ? Timestamp.fromDate(sanitized.warrantyEnd)
     : null;
 
+  const licenseFields = isLicense
+    ? {
+        licenseType: sanitized.licenseType,
+        subscribedAt: sanitized.subscribedAt
+          ? Timestamp.fromDate(sanitized.subscribedAt)
+          : null,
+        expiresAt: sanitized.expiresAt
+          ? Timestamp.fromDate(sanitized.expiresAt)
+          : null,
+      }
+    : { licenseType: null, subscribedAt: null, expiresAt: null };
+
   return runTransaction(db, async (tx) => {
     const catSnap = await tx.get(catRef);
     if (!catSnap.exists()) {
-      throw new AssetCategoryInactiveError(sanitized.categoryId);
+      throw new AssetCategoryInactiveError(categoryId);
     }
     const cat = catSnap.data();
     if (cat?.isActive === false) {
-      throw new AssetCategoryInactiveError(sanitized.categoryId);
-    }
-    const prefix = cat?.inventoryCodePrefix;
-    if (!prefix) {
-      throw new Error(
-        `createAsset: category ${sanitized.categoryId} missing inventoryCodePrefix`
-      );
+      throw new AssetCategoryInactiveError(categoryId);
     }
 
-    const counterSnap = await tx.get(counterRef);
-    if (!counterSnap.exists()) {
-      throw new AssetCounterMissingError(sanitized.categoryId);
-    }
-    const next = counterSnap.data()?.next;
-    if (typeof next !== 'number' || !Number.isInteger(next) || next < 1) {
-      throw new Error(
-        `createAsset: counter for ${sanitized.categoryId} is malformed`
-      );
+    // Gate the counter fetch+increment on whether this category assigns codes.
+    const wantsCode = cat.assignsInventoryCode !== false;
+    let inventoryCode = null;
+    if (wantsCode) {
+      const prefix = cat?.inventoryCodePrefix;
+      if (!prefix) {
+        throw new Error(
+          `createAsset: category ${categoryId} missing inventoryCodePrefix`
+        );
+      }
+      const counterRef = categoryCounterDoc(categoryId);
+      const counterSnap = await tx.get(counterRef);
+      if (!counterSnap.exists()) {
+        throw new AssetCounterMissingError(categoryId);
+      }
+      const next = counterSnap.data()?.next;
+      if (typeof next !== 'number' || !Number.isInteger(next) || next < 1) {
+        throw new Error(
+          `createAsset: counter for ${categoryId} is malformed`
+        );
+      }
+      inventoryCode = formatInventoryCode(prefix, next);
+      // Strict-monotonic-by-one increment — matches firestore.rules.
+      tx.update(counterRef, {
+        next: next + 1,
+        updatedAt: serverTimestamp(),
+      });
     }
 
     // Subtype validation — load and check attachableTo invariant.
@@ -243,18 +325,23 @@ export async function createAsset(input, actor, opts = {}) {
     const formErrors = validateAssetInput(sanitized, {
       category: opts.category ?? null,
       subtype: { attachableTo: subtype.attachableTo ?? null },
+      isEdit: false,
     });
     if (Object.keys(formErrors).length > 0) {
       throw new Error(`asset/invariant: ${JSON.stringify(formErrors)}`);
     }
 
-    const inventoryCode = formatInventoryCode(prefix, next);
-
-    // Strict-monotonic-by-one increment — matches firestore.rules.
-    tx.update(counterRef, {
-      next: next + 1,
-      updatedAt: serverTimestamp(),
-    });
+    // Fix 4: cycle check when assigning an asset to another asset.
+    if (sanitized.assignedTo?.kind === 'asset' && sanitized.assignedTo.id) {
+      await assertNoAssignmentCycle({
+        hostAssetId: assetRef.id,
+        targetAssetId: sanitized.assignedTo.id,
+        lookup: async (id) => {
+          const snap = await tx.get(assetDoc(id));
+          return snap.exists() ? snap.data() : null;
+        },
+      });
+    }
 
     const after = {
       assetId: assetRef.id,
@@ -263,8 +350,8 @@ export async function createAsset(input, actor, opts = {}) {
       subtypeId: sanitized.subtypeId,
       statusId: sanitized.statusId,
       name: sanitized.name,
-      brand: sanitized.brand,
-      model: sanitized.model,
+      brandId: sanitized.brandId,
+      modelId: sanitized.modelId,
       serialNumber: sanitized.serialNumber,
       branchId: sanitized.branchId,
       assignedTo: sanitized.assignedTo,
@@ -274,6 +361,7 @@ export async function createAsset(input, actor, opts = {}) {
       condition: sanitized.condition,
       warrantyStart: warrantyStartTs,
       warrantyEnd: warrantyEndTs,
+      ...licenseFields,
       isActive: sanitized.isActive,
       createdAt: serverTimestamp(),
       createdBy: actor.uid,
@@ -303,6 +391,33 @@ export async function createAsset(input, actor, opts = {}) {
           sanitized.assignedTo?.kind === 'employee' ? sanitized.assignedTo.id : null,
       })
     );
+
+    // License-secret write — inside the same transaction, never leaks the
+    // key into the asset doc or the audit row.
+    const licenseKey =
+      typeof input.licenseKey === 'string' ? input.licenseKey.trim() : '';
+    if (isLicense && licenseKey.length > 0) {
+      const sanitizedKey = sanitizeLicenseSecretValue(licenseKey);
+      const secretRef = doc(db, 'assets', assetRef.id, 'secrets', 'key');
+      tx.set(secretRef, {
+        value: sanitizedKey,
+        updatedAt: serverTimestamp(),
+        updatedBy: actor.uid,
+      });
+      tx.set(
+        newAuditLogRef(),
+        buildAuditLog({
+          entity: 'asset',
+          entityId: assetRef.id,
+          action: 'license_key_set',
+          actorUid: actor.uid,
+          actorRole: actor.role,
+          before: { licenseKeySet: false },
+          after: { licenseKeySet: true },
+          relatedAssetId: assetRef.id,
+        })
+      );
+    }
 
     return assetRef.id;
   });
@@ -342,6 +457,20 @@ export async function updateAsset(id, input, before, actor, opts = {}) {
     ? Timestamp.fromDate(sanitized.warrantyEnd)
     : null;
 
+  const updateCategoryId = sanitized.categoryId || before.categoryId;
+  const isLicenseUpdate = updateCategoryId === 'license';
+  const licenseUpdateFields = isLicenseUpdate
+    ? {
+        licenseType: sanitized.licenseType,
+        subscribedAt: sanitized.subscribedAt
+          ? Timestamp.fromDate(sanitized.subscribedAt)
+          : null,
+        expiresAt: sanitized.expiresAt
+          ? Timestamp.fromDate(sanitized.expiresAt)
+          : null,
+      }
+    : { licenseType: null, subscribedAt: null, expiresAt: null };
+
   // Subtype invariant must be re-checked when the subtypeId or the
   // assignedTo target changes (the two factors that drive
   // `attachableTo` enforcement). If neither changed we trust the
@@ -356,6 +485,24 @@ export async function updateAsset(id, input, before, actor, opts = {}) {
     : null;
 
   await runTransaction(db, async (tx) => {
+    // Fix 5: reject mutations to assignedTo/statusId/branchId when the current
+    // status is final. Other fields (notes, attachments, etc.) remain editable.
+    const currentStatusId = before.statusId ?? null;
+    if (currentStatusId) {
+      const final = await isFinalStatus(tx, currentStatusId);
+      if (final) {
+        const assignedToChanged =
+          JSON.stringify(sanitized.assignedTo) !== JSON.stringify(before.assignedTo);
+        const statusIdChanged =
+          sanitized.statusId && sanitized.statusId !== before.statusId;
+        const branchIdChanged =
+          sanitized.branchId !== (before.branchId ?? null);
+        if (assignedToChanged || statusIdChanged || branchIdChanged) {
+          throw new AssetStatusFinalError(currentStatusId);
+        }
+      }
+    }
+
     if (subtypeRef) {
       const subtypeSnap = await tx.get(subtypeRef);
       if (!subtypeSnap.exists() || subtypeSnap.data()?.isActive === false) {
@@ -365,17 +512,30 @@ export async function updateAsset(id, input, before, actor, opts = {}) {
       const formErrors = validateAssetInput(sanitized, {
         category: opts.category ?? null,
         subtype: { attachableTo: subtype.attachableTo ?? null },
+        isEdit: true,
       });
       if (Object.keys(formErrors).length > 0) {
         throw new Error(`asset/invariant: ${JSON.stringify(formErrors)}`);
       }
     }
 
+    // Fix 4: cycle check when assigning to another asset.
+    if (sanitized.assignedTo?.kind === 'asset' && sanitized.assignedTo.id) {
+      await assertNoAssignmentCycle({
+        hostAssetId: id,
+        targetAssetId: sanitized.assignedTo.id,
+        lookup: async (aid) => {
+          const snap = await tx.get(assetDoc(aid));
+          return snap.exists() ? snap.data() : null;
+        },
+      });
+    }
+
     const after = {
       // categoryId & inventoryCode & statusId NOT touched here.
       name: sanitized.name,
-      brand: sanitized.brand,
-      model: sanitized.model,
+      brandId: sanitized.brandId,
+      modelId: sanitized.modelId,
       serialNumber: sanitized.serialNumber,
       branchId: sanitized.branchId,
       assignedTo: sanitized.assignedTo,
@@ -385,6 +545,7 @@ export async function updateAsset(id, input, before, actor, opts = {}) {
       condition: sanitized.condition,
       warrantyStart: warrantyStartTs,
       warrantyEnd: warrantyEndTs,
+      ...licenseUpdateFields,
       isActive: sanitized.isActive,
       updatedAt: serverTimestamp(),
       updatedBy: actor.uid,
@@ -405,8 +566,8 @@ export async function updateAsset(id, input, before, actor, opts = {}) {
       subtypeId: sanitized.subtypeId || before.subtypeId,
       statusId: before.statusId,
       name: sanitized.name,
-      brand: sanitized.brand,
-      model: sanitized.model,
+      brandId: sanitized.brandId,
+      modelId: sanitized.modelId,
       serialNumber: sanitized.serialNumber,
       branchId: sanitized.branchId,
       assignedTo: sanitized.assignedTo,
@@ -416,6 +577,9 @@ export async function updateAsset(id, input, before, actor, opts = {}) {
       condition: sanitized.condition,
       warrantyStart: sanitized.warrantyStart,
       warrantyEnd: sanitized.warrantyEnd,
+      licenseType: sanitized.licenseType,
+      subscribedAt: sanitized.subscribedAt,
+      expiresAt: sanitized.expiresAt,
       isActive: sanitized.isActive,
     };
 
@@ -434,6 +598,8 @@ export async function updateAsset(id, input, before, actor, opts = {}) {
           sanitized.assignedTo?.kind === 'employee' ? sanitized.assignedTo.id : null,
       })
     );
+    // NOTE: updateAsset intentionally does NOT touch /assets/{id}/secrets/key.
+    // License key edits are handled exclusively by the LicenseKeyDialog (Task 31).
   });
 }
 
@@ -443,11 +609,15 @@ export async function updateAsset(id, input, before, actor, opts = {}) {
  * optional comment so downstream readers don't have to diff the two
  * snapshots to find the transition.
  *
+ * Fix 5: if the current status has `isFinal: true`, the change is
+ * rejected unless `opts.allowOverride === true` AND the actor is a
+ * super_admin. Same-status no-ops are always allowed.
+ *
  * @param {string} id
  * @param {string} statusId
  * @param {import('@/domain/assets.js').Asset} before
  * @param {{ uid: string, role: string }} actor
- * @param {{ comment?: string }} [opts]
+ * @param {{ comment?: string, allowOverride?: boolean }} [opts]
  */
 export async function setAssetStatus(id, statusId, before, actor, opts = {}) {
   if (!actor?.uid) throw new Error('setAssetStatus: actor.uid required');
@@ -462,6 +632,19 @@ export async function setAssetStatus(id, statusId, before, actor, opts = {}) {
   const comment = typeof opts.comment === 'string' ? opts.comment.trim() : null;
 
   await runTransaction(db, async (tx) => {
+    // Fix 5: gate transitions away from a final status.
+    // Same-statusId write (no-op) is always allowed (idempotent).
+    if (fromStatusId && fromStatusId !== statusId) {
+      const final = await isFinalStatus(tx, fromStatusId);
+      if (final) {
+        const overrideAllowed =
+          opts.allowOverride === true && actor.role === 'super_admin';
+        if (!overrideAllowed) {
+          throw new AssetStatusFinalError(fromStatusId);
+        }
+      }
+    }
+
     tx.update(ref, {
       statusId,
       updatedAt: serverTimestamp(),
@@ -496,6 +679,7 @@ export async function setAssetStatus(id, statusId, before, actor, opts = {}) {
 export const firestoreAssetRepository = Object.freeze({
   list: subscribeAssets,
   get: subscribeAsset,
+  listByEmployee: subscribeAssetsByEmployee,
   create: createAsset,
   update: updateAsset,
   setStatus: setAssetStatus,

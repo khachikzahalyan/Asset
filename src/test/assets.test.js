@@ -32,8 +32,8 @@ describe('emptyAssetInput', () => {
     expect(e.statusId).toBe(DEFAULT_ASSET_STATUS_CODE);
     expect(e.assignedTo).toEqual({ kind: ASSIGNMENT_KINDS.WAREHOUSE, id: null });
     expect(e.branchId).toBeNull();
-    expect(e.brand).toBeNull();
-    expect(e.model).toBeNull();
+    expect(e.brandId).toBeNull();
+    expect(e.modelId).toBeNull();
     expect(e.serialNumber).toBeNull();
     expect(e.notes).toBeNull();
     expect(e.purchaseDate).toBeNull();
@@ -43,7 +43,7 @@ describe('emptyAssetInput', () => {
 });
 
 describe('sanitizeAssetInput', () => {
-  it('keeps name as plain trimmed string for single-lang category', () => {
+  it('nulls name for non-multilang category regardless of input', () => {
     const out = sanitizeAssetInput(
       {
         categoryId: 'device',
@@ -51,7 +51,7 @@ describe('sanitizeAssetInput', () => {
       },
       { category: SINGLE_LANG_CATEGORY }
     );
-    expect(out.name).toBe('ASUS X550');
+    expect(out.name).toBeNull();
   });
 
   it('reshapes name into a 3-locale map for multi-lang category', () => {
@@ -65,7 +65,7 @@ describe('sanitizeAssetInput', () => {
     expect(out.name).toEqual({ ru: 'Стол', en: 'Table', hy: 'Սեղան' });
   });
 
-  it('picks first non-empty locale value when single-lang category receives a map', () => {
+  it('nulls name when single-lang category receives a map', () => {
     const out = sanitizeAssetInput(
       {
         categoryId: 'device',
@@ -73,22 +73,18 @@ describe('sanitizeAssetInput', () => {
       },
       { category: SINGLE_LANG_CATEGORY }
     );
-    expect(out.name).toBe('Laptop');
+    expect(out.name).toBeNull();
   });
 
-  it('trims brand/model/serialNumber and nulls when empty', () => {
+  it('trims serialNumber and nulls when empty', () => {
     const out = sanitizeAssetInput(
       {
         categoryId: 'device',
         name: 'X',
-        brand: '  Lenovo  ',
-        model: '   ',
         serialNumber: '',
       },
       { category: SINGLE_LANG_CATEGORY }
     );
-    expect(out.brand).toBe('Lenovo');
-    expect(out.model).toBeNull();
     expect(out.serialNumber).toBeNull();
   });
 
@@ -197,7 +193,7 @@ describe('validateAssetInput', () => {
     expect(errors.categoryId).toBe('errorRequired');
   });
 
-  it('flags missing single-lang name', () => {
+  it('does not flag name for non-multilang category (sanitizer nulls it)', () => {
     const errors = validateAssetInput(
       {
         categoryId: 'device',
@@ -207,7 +203,7 @@ describe('validateAssetInput', () => {
       },
       { category: SINGLE_LANG_CATEGORY }
     );
-    expect(errors.name).toBe('errorRequired');
+    expect(errors.name).toBeUndefined();
   });
 
   it('flags missing multi-lang name (all locales blank)', () => {
@@ -236,33 +232,17 @@ describe('validateAssetInput', () => {
     expect(errors.name).toBe('errorNameAllLocales');
   });
 
-  it('flags non-ASCII brand', () => {
+  it('flags non-ASCII serialNumber', () => {
     const errors = validateAssetInput(
       {
         categoryId: 'device',
         name: 'X',
-        brand: 'Леново',
-        assignedTo: { kind: 'warehouse', id: null },
-        branchId: 'b',
-      },
-      { category: SINGLE_LANG_CATEGORY }
-    );
-    expect(errors.brand).toBe('errorAsciiOnly');
-  });
-
-  it('flags non-ASCII model and serialNumber', () => {
-    const errors = validateAssetInput(
-      {
-        categoryId: 'device',
-        name: 'X',
-        model: 'модель',
         serialNumber: 'абв',
         assignedTo: { kind: 'warehouse', id: null },
         branchId: 'b',
       },
       { category: SINGLE_LANG_CATEGORY }
     );
-    expect(errors.model).toBe('errorAsciiOnly');
     expect(errors.serialNumber).toBe('errorAsciiOnly');
   });
 
@@ -477,13 +457,14 @@ describe('assets — subtype + condition + warranty + asset-kind extensions', ()
   });
 
   it('validateAssetInput rejects warrantyEnd earlier than warrantyStart', () => {
+    // Use future dates so warrantyStart does not also trigger errorWarrantyStartPast.
     const errors = validateAssetInput({
       categoryId: 'device',
       subtypeId: 'device_laptop',
       name: 'Some name',
       condition: 'new',
-      warrantyStart: new Date('2027-01-01'),
-      warrantyEnd: new Date('2026-01-01'),
+      warrantyStart: new Date('2027-06-01'),
+      warrantyEnd: new Date('2027-01-01'),
       assignedTo: { kind: 'warehouse', id: null },
       branchId: 'b_main',
     });
@@ -491,16 +472,21 @@ describe('assets — subtype + condition + warranty + asset-kind extensions', ()
   });
 
   it('validateAssetInput accepts equal start and end', () => {
-    const errors = validateAssetInput({
-      categoryId: 'device',
-      subtypeId: 'device_laptop',
-      name: 'Some name',
-      condition: 'new',
-      warrantyStart: new Date('2026-05-07'),
-      warrantyEnd: new Date('2026-05-07'),
-      assignedTo: { kind: 'warehouse', id: null },
-      branchId: 'b_main',
-    });
+    // Use isEdit: true to avoid the "warrantyStart not in past" guard, since
+    // this test is about the warrantyEnd/warrantyStart ordering rule only.
+    const errors = validateAssetInput(
+      {
+        categoryId: 'device',
+        subtypeId: 'device_laptop',
+        name: 'Some name',
+        condition: 'new',
+        warrantyStart: new Date('2026-05-07'),
+        warrantyEnd: new Date('2026-05-07'),
+        assignedTo: { kind: 'warehouse', id: null },
+        branchId: 'b_main',
+      },
+      { isEdit: true },
+    );
     expect(errors.warrantyEnd).toBeUndefined();
   });
 
@@ -613,5 +599,347 @@ describe('Custom error classes', () => {
     const e = new AssetCategoryInactiveError('furniture');
     expect(e.code).toBe('asset/category-inactive');
     expect(e.categoryId).toBe('furniture');
+  });
+});
+
+describe('assets — brandId/modelId FK shape', () => {
+  it('emptyAssetInput exposes brandId/modelId as null and not brand/model', () => {
+    const e = emptyAssetInput();
+    expect('brand' in e).toBe(false);
+    expect('model' in e).toBe(false);
+    expect(e.brandId).toBeNull();
+    expect(e.modelId).toBeNull();
+  });
+
+  it('sanitizeAssetInput trims brandId and modelId', () => {
+    const s = sanitizeAssetInput({
+      categoryId: 'device',
+      subtypeId: 'device_laptop',
+      brandId: '  hp  ',
+      modelId: '  elitebook  ',
+    });
+    expect(s.brandId).toBe('hp');
+    expect(s.modelId).toBe('elitebook');
+  });
+
+  it('sanitizeAssetInput returns null when fields are missing', () => {
+    const s = sanitizeAssetInput({ categoryId: 'device', subtypeId: 'device_laptop' });
+    expect(s.brandId).toBeNull();
+    expect(s.modelId).toBeNull();
+  });
+
+  it('sanitizeAssetInput strips brand/model legacy strings', () => {
+    const s = sanitizeAssetInput({
+      categoryId: 'device',
+      subtypeId: 'device_laptop',
+      brand: 'HP-legacy',
+      model: 'EliteBook-legacy',
+    });
+    expect('brand' in s).toBe(false);
+    expect('model' in s).toBe(false);
+  });
+
+  it('validateAssetInput requires brandId when modelId is set', () => {
+    const errs = validateAssetInput(
+      {
+        categoryId: 'device',
+        subtypeId: 'device_laptop',
+        name: 'Mac',
+        statusId: 'warehouse',
+        assignedTo: { kind: 'warehouse', id: null },
+        branchId: 'b1',
+        condition: 'new',
+        brandId: null,
+        modelId: 'elitebook',
+      },
+      { category: { requiresMultilang: false }, subtype: { attachableTo: ['warehouse'] } }
+    );
+    expect(errs.brandId).toBe('errorRequired');
+  });
+});
+
+describe('assets — name nullable for non-multilang categories', () => {
+  it('sanitizeAssetInput sets name=null when category.requiresMultilang===false', () => {
+    const s = sanitizeAssetInput(
+      { categoryId: 'device', subtypeId: 'device_laptop', name: 'X' },
+      { category: { requiresMultilang: false } }
+    );
+    expect(s.name).toBeNull();
+  });
+
+  it('validateAssetInput does NOT report name error when requiresMultilang===false', () => {
+    const errs = validateAssetInput(
+      {
+        categoryId: 'device',
+        subtypeId: 'device_laptop',
+        statusId: 'warehouse',
+        assignedTo: { kind: 'warehouse', id: null },
+        branchId: 'b1',
+        condition: 'new',
+      },
+      { category: { requiresMultilang: false }, subtype: { attachableTo: ['warehouse'] } }
+    );
+    expect(errs.name).toBeUndefined();
+  });
+});
+
+describe('assets — license fields', () => {
+  it('emptyAssetInput exposes licenseType/subscribedAt/expiresAt as null', () => {
+    const e = emptyAssetInput();
+    expect(e.licenseType).toBeNull();
+    expect(e.subscribedAt).toBeNull();
+    expect(e.expiresAt).toBeNull();
+  });
+
+  it('sanitizeAssetInput parses license dates', () => {
+    const s = sanitizeAssetInput(
+      {
+        categoryId: 'license',
+        subtypeId: 'license_windows',
+        licenseType: 'business',
+        subscribedAt: '2026-01-01',
+        expiresAt: '2027-01-01',
+      },
+      { category: { requiresMultilang: false } }
+    );
+    expect(s.subscribedAt).toBeInstanceOf(Date);
+    expect(s.expiresAt).toBeInstanceOf(Date);
+    expect(s.licenseType).toBe('business');
+  });
+
+  it('sanitizeAssetInput coerces unknown licenseType to null', () => {
+    const s = sanitizeAssetInput(
+      {
+        categoryId: 'license',
+        subtypeId: 'license_windows',
+        licenseType: 'invalid-value',
+      },
+      { category: { requiresMultilang: false } }
+    );
+    expect(s.licenseType).toBeNull();
+  });
+
+  it('validateAssetInput requires licenseType, subscribedAt, expiresAt for license categories', () => {
+    const errs = validateAssetInput(
+      {
+        categoryId: 'license',
+        subtypeId: 'license_windows',
+        statusId: 'warehouse',
+        assignedTo: { kind: 'warehouse', id: null },
+        branchId: 'b1',
+        condition: 'new',
+      },
+      { category: { requiresMultilang: false }, subtype: { attachableTo: ['warehouse'] } }
+    );
+    expect(errs.licenseType).toBe('errorRequired');
+    expect(errs.subscribedAt).toBe('errorRequired');
+    expect(errs.expiresAt).toBe('errorRequired');
+  });
+
+  it('validateAssetInput rejects expiresAt <= subscribedAt', () => {
+    const errs = validateAssetInput(
+      {
+        categoryId: 'license',
+        subtypeId: 'license_windows',
+        statusId: 'warehouse',
+        assignedTo: { kind: 'warehouse', id: null },
+        branchId: 'b1',
+        condition: 'new',
+        licenseType: 'business',
+        subscribedAt: '2027-01-01',
+        expiresAt: '2026-01-01',
+      },
+      { category: { requiresMultilang: false }, subtype: { attachableTo: ['warehouse'] } }
+    );
+    expect(errs.expiresAt).toBe('errorExpiresBeforeSubscribed');
+  });
+});
+
+describe('assets — sanitizeAssetInput totality', () => {
+  const EXPECTED_KEYS = [
+    'categoryId',
+    'subtypeId',
+    'name',
+    'brandId',
+    'modelId',
+    'serialNumber',
+    'statusId',
+    'assignedTo',
+    'branchId',
+    'notes',
+    'purchaseDate',
+    'purchasePrice',
+    'condition',
+    'warrantyStart',
+    'warrantyEnd',
+    'licenseType',
+    'subscribedAt',
+    'expiresAt',
+    'isActive',
+  ];
+
+  it('handles undefined input without throwing and returns full structure', () => {
+    const out = sanitizeAssetInput(undefined);
+    for (const k of EXPECTED_KEYS) {
+      expect(out).toHaveProperty(k);
+    }
+    expect(out.brandId).toBeNull();
+    expect(out.modelId).toBeNull();
+    expect(out.licenseType).toBeNull();
+    expect(out.subscribedAt).toBeNull();
+    expect(out.expiresAt).toBeNull();
+    expect(out.name).toBe('');
+  });
+
+  it('handles null input without throwing and returns full structure', () => {
+    const out = sanitizeAssetInput(null);
+    for (const k of EXPECTED_KEYS) {
+      expect(out).toHaveProperty(k);
+    }
+    expect(out.brandId).toBeNull();
+    expect(out.modelId).toBeNull();
+    expect(out.licenseType).toBeNull();
+    expect(out.subscribedAt).toBeNull();
+    expect(out.expiresAt).toBeNull();
+    expect(out.name).toBe('');
+  });
+
+  it('handles undefined opts without throwing and returns full structure', () => {
+    const out = sanitizeAssetInput({}, undefined);
+    for (const k of EXPECTED_KEYS) {
+      expect(out).toHaveProperty(k);
+    }
+    expect(out.brandId).toBeNull();
+    expect(out.modelId).toBeNull();
+    expect(out.licenseType).toBeNull();
+    expect(out.subscribedAt).toBeNull();
+    expect(out.expiresAt).toBeNull();
+    expect(out.name).toBe('');
+  });
+});
+
+describe('assets — license holder constraint', () => {
+  const LICENSE_CATEGORY = { requiresMultilang: false, assignsInventoryCode: false };
+  const DEVICE_CATEGORY = { requiresMultilang: false };
+
+  it('returns errorLicenseInvalidHolder when license is assigned to warehouse', () => {
+    const errs = validateAssetInput(
+      {
+        categoryId: 'license',
+        subtypeId: 'license_os',
+        licenseType: 'business',
+        subscribedAt: '2026-01-01',
+        expiresAt: '2027-01-01',
+        condition: 'new',
+        assignedTo: { kind: 'warehouse', id: null },
+        branchId: 'b1',
+      },
+      { category: LICENSE_CATEGORY }
+    );
+    expect(errs.assignedTo).toBe('errorLicenseInvalidHolder');
+  });
+
+  it('returns errorLicenseInvalidHolder when license is assigned to branch', () => {
+    const errs = validateAssetInput(
+      {
+        categoryId: 'license',
+        subtypeId: 'license_os',
+        licenseType: 'business',
+        subscribedAt: '2026-01-01',
+        expiresAt: '2027-01-01',
+        condition: 'new',
+        assignedTo: { kind: 'branch', id: 'b1' },
+        branchId: 'b1',
+      },
+      { category: LICENSE_CATEGORY }
+    );
+    expect(errs.assignedTo).toBe('errorLicenseInvalidHolder');
+  });
+
+  it('returns errorLicenseInvalidHolder when license is assigned to department', () => {
+    const errs = validateAssetInput(
+      {
+        categoryId: 'license',
+        subtypeId: 'license_os',
+        licenseType: 'business',
+        subscribedAt: '2026-01-01',
+        expiresAt: '2027-01-01',
+        condition: 'new',
+        assignedTo: { kind: 'department', id: 'd1' },
+      },
+      { category: LICENSE_CATEGORY }
+    );
+    expect(errs.assignedTo).toBe('errorLicenseInvalidHolder');
+  });
+
+  it('does not return errorLicenseInvalidHolder when license is assigned to employee', () => {
+    const errs = validateAssetInput(
+      {
+        categoryId: 'license',
+        subtypeId: 'license_os',
+        licenseType: 'business',
+        subscribedAt: '2026-01-01',
+        expiresAt: '2027-01-01',
+        condition: 'new',
+        assignedTo: { kind: 'employee', id: 'emp-1' },
+      },
+      { category: LICENSE_CATEGORY }
+    );
+    expect(errs.assignedTo).toBeUndefined();
+  });
+
+  it('does not return errorLicenseInvalidHolder when license is assigned to asset', () => {
+    const errs = validateAssetInput(
+      {
+        categoryId: 'license',
+        subtypeId: 'license_os',
+        licenseType: 'business',
+        subscribedAt: '2026-01-01',
+        expiresAt: '2027-01-01',
+        condition: 'new',
+        assignedTo: { kind: 'asset', id: 'asset-1' },
+      },
+      { category: LICENSE_CATEGORY }
+    );
+    expect(errs.assignedTo).toBeUndefined();
+  });
+
+  it('does not apply license holder rule for non-license categories', () => {
+    const errs = validateAssetInput(
+      {
+        categoryId: 'device',
+        subtypeId: 'device_laptop',
+        condition: 'new',
+        assignedTo: { kind: 'warehouse', id: null },
+        branchId: 'b1',
+      },
+      { category: DEVICE_CATEGORY }
+    );
+    expect(errs.assignedTo).toBeUndefined();
+  });
+});
+
+describe('assets — inventoryCode nullable when category opts out', () => {
+  it('validateAssetInput does NOT require inventoryCode (it is allocated by repo)', () => {
+    const errs = validateAssetInput(
+      {
+        categoryId: 'license',
+        subtypeId: 'license_windows',
+        statusId: 'warehouse',
+        assignedTo: { kind: 'warehouse', id: null },
+        branchId: 'b1',
+        condition: 'new',
+        licenseType: 'business',
+        subscribedAt: '2026-01-01',
+        expiresAt: '2027-01-01',
+      },
+      {
+        category: { requiresMultilang: false, assignsInventoryCode: false },
+        subtype: { attachableTo: ['warehouse'] },
+      }
+    );
+    // inventoryCode is not part of AssetInput at all — repository allocates
+    // it. The point of this test is that no validation error appears for it.
+    expect(errs.inventoryCode).toBeUndefined();
   });
 });

@@ -174,8 +174,7 @@ describe('firestoreAssetRepository', () => {
         {
           categoryId: 'device',
           subtypeId: 'device_laptop',
-          name: 'ASUS X550',
-          brand: 'ASUS',
+          brandId: 'brand_asus',
           assignedTo: { kind: 'warehouse', id: null },
           branchId: 'b_main',
           statusId: 'warehouse',
@@ -201,8 +200,7 @@ describe('firestoreAssetRepository', () => {
         inventoryCode: '400/5',
         categoryId: 'device',
         statusId: 'warehouse',
-        name: 'ASUS X550',
-        brand: 'ASUS',
+        brandId: 'brand_asus',
         branchId: 'b_main',
         assignedTo: { kind: 'warehouse', id: null },
         isActive: true,
@@ -226,7 +224,7 @@ describe('firestoreAssetRepository', () => {
         inventoryCode: '400/5',
         categoryId: 'device',
         statusId: 'warehouse',
-        brand: 'ASUS',
+        brandId: 'brand_asus',
       });
     });
 
@@ -355,8 +353,7 @@ describe('firestoreAssetRepository', () => {
         {
           categoryId: 'OTHER_CATEGORY',
           statusId: 'OTHER_STATUS',
-          name: 'A2',
-          brand: 'Lenovo',
+          brandId: 'brand_lenovo',
           assignedTo: { kind: 'warehouse', id: null },
           branchId: 'b_main',
         },
@@ -368,8 +365,7 @@ describe('firestoreAssetRepository', () => {
       expect(mocks.capturedTx.updates).toHaveLength(1);
       const update = mocks.capturedTx.updates[0].data;
       expect(update).toMatchObject({
-        name: 'A2',
-        brand: 'Lenovo',
+        brandId: 'brand_lenovo',
         updatedBy: 'u_2',
         updatedAt: 'SERVER_TS',
       });
@@ -385,7 +381,7 @@ describe('firestoreAssetRepository', () => {
         'a_1',
         {
           categoryId: 'device',
-          name: 'A2',
+          brandId: 'brand_lenovo',
           assignedTo: { kind: 'warehouse', id: null },
           branchId: 'b_main',
         },
@@ -397,8 +393,8 @@ describe('firestoreAssetRepository', () => {
       const audit = mocks.capturedTx.sets[0].data;
       expect(audit.action).toBe('update');
       expect(audit.entity).toBe('asset');
-      expect(audit.before).toMatchObject({ name: 'A' });
-      expect(audit.after).toMatchObject({ name: 'A2' });
+      expect(audit.before).toMatchObject({ brandId: null });
+      expect(audit.after).toMatchObject({ brandId: 'brand_lenovo' });
       // Immutable fields preserved in the audit `after` blob.
       expect(audit.after.inventoryCode).toBe('400/5');
       expect(audit.after.categoryId).toBe('device');
@@ -499,8 +495,8 @@ describe('firestoreAssetRepository', () => {
 
 describe('firestoreAssetRepository — subtype + condition + warranty + asset-target invariants', () => {
   it('persists subtypeId, condition, warrantyStart, warrantyEnd on create', async () => {
-    const start = new Date('2026-01-01T00:00:00Z');
-    const end = new Date('2027-01-01T00:00:00Z');
+    const start = new Date('2027-01-01T00:00:00Z');
+    const end = new Date('2028-01-01T00:00:00Z');
     const id = await createAsset(
       {
         categoryId: 'device',
@@ -610,6 +606,9 @@ describe('firestoreAssetRepository — subtype + condition + warranty + asset-ta
         assignedTo: { kind: 'asset', id: 'asset_target' },
         statusId: 'warehouse',
         condition: 'new',
+        licenseType: 'business',
+        subscribedAt: new Date('2026-01-01'),
+        expiresAt: new Date('2027-01-01'),
       },
       { uid: 'u_1', role: 'super_admin' },
       { category: { requiresMultilang: false } }
@@ -638,5 +637,153 @@ describe('firestoreAssetRepository — subtype + condition + warranty + asset-ta
         { category: { requiresMultilang: false } }
       )
     ).rejects.toThrow(/inactive|missing/i);
+  });
+});
+
+describe('firestoreAssetRepository — license categories skip counter', () => {
+  // Each test sets up a license category with assignsInventoryCode: false.
+  // We do this by overriding mocks.category and seeding mocks.subtypes.
+  // The tx.get mock branches on ref.__ref[0] (path) → returns mocks.category
+  // for 'categories', mocks.subtypes.get(id) for 'asset_subtypes'.
+  // The 'category_counters' branch is never reached when wantsCode === false.
+
+  // Licenses can only be assigned to 'asset' or 'employee' — never to
+  // warehouse, branch, or department. Use 'employee' as the valid holder.
+  const licenseInput = {
+    categoryId: 'license',
+    subtypeId: 'license_windows',
+    statusId: 'assigned',
+    assignedTo: { kind: 'employee', id: 'emp-1' },
+    branchId: null,
+    condition: 'new',
+    licenseType: 'business',
+    subscribedAt: new Date('2026-01-01'),
+    expiresAt: new Date('2027-01-01'),
+  };
+
+  beforeEach(() => {
+    mocks.category = {
+      exists: true,
+      data: {
+        categoryId: 'license',
+        inventoryCodePrefix: 'LIC',
+        assignsInventoryCode: false,
+        isActive: true,
+        requiresMultilang: false,
+        attachableTo: ['asset', 'employee'],
+      },
+    };
+    mocks.subtypes.set('license_windows', {
+      categoryId: 'license',
+      attachableTo: ['asset', 'employee'],
+      isActive: true,
+      name: 'Windows',
+    });
+  });
+
+  it('does NOT touch category_counters when category.assignsInventoryCode === false', async () => {
+    await createAsset(licenseInput, { uid: 'u1', role: 'super_admin' }, { category: { requiresMultilang: false } });
+
+    const counterUpdate = mocks.capturedTx.updates.find(
+      (u) => Array.isArray(u.ref?.__ref) && u.ref.__ref[0] === 'category_counters'
+    );
+    expect(counterUpdate).toBeUndefined();
+  });
+
+  it('writes inventoryCode=null on the asset doc when category opts out', async () => {
+    await createAsset(licenseInput, { uid: 'u1', role: 'super_admin' }, { category: { requiresMultilang: false } });
+
+    const assetSet = mocks.capturedTx.sets.find(
+      (s) => s.data?.categoryId === 'license'
+    );
+    expect(assetSet).toBeDefined();
+    expect(assetSet.data.inventoryCode).toBeNull();
+  });
+
+  it('writes the license-secret doc inside the same transaction when licenseKey provided', async () => {
+    await createAsset(
+      { ...licenseInput, licenseKey: 'TOP-SECRET-VALUE' },
+      { uid: 'u1', role: 'super_admin' },
+      { category: { requiresMultilang: false } }
+    );
+
+    // asset doc + asset audit + secret doc + secret audit = 4 sets minimum
+    expect(mocks.capturedTx.sets.length).toBeGreaterThanOrEqual(3);
+
+    // The secret doc ref must point to assets/{id}/secrets/key
+    const secretSet = mocks.capturedTx.sets.find(
+      (s) =>
+        Array.isArray(s.ref?.__ref) &&
+        s.ref.__ref.includes('secrets') &&
+        s.ref.__ref.includes('key')
+    );
+    expect(secretSet).toBeDefined();
+
+    // Audit rows for license_key_set must NOT contain the raw key value —
+    // only the asset doc itself carries the value (in the secret subcollection).
+    const licenseKeyAuditSet = mocks.capturedTx.sets.find(
+      (s) => s.data?.action === 'license_key_set'
+    );
+    expect(licenseKeyAuditSet).toBeDefined();
+    expect(JSON.stringify(licenseKeyAuditSet.data)).not.toContain('TOP-SECRET-VALUE');
+    expect(licenseKeyAuditSet.data.before).toEqual({ licenseKeySet: false });
+    expect(licenseKeyAuditSet.data.after).toEqual({ licenseKeySet: true });
+
+    // Issue 2: Asset doc body must NOT carry licenseKey or the raw value.
+    // The asset doc ref is created via doc(collection(...)) → mocks.newDoc(),
+    // which returns { id: 'doc_N' } with no __ref. The secret doc ref is created
+    // via doc(db, 'assets', id, 'secrets', 'key') → has __ref. Distinguish by
+    // looking for the set whose ref has no __ref and whose data.categoryId matches.
+    const assetDocSet = mocks.capturedTx.sets.find(
+      (s) => !s.ref?.__ref && s.data?.categoryId === 'license'
+    );
+    expect(assetDocSet).toBeDefined();
+    expect(assetDocSet.data).not.toHaveProperty('licenseKey');
+    expect(JSON.stringify(assetDocSet.data)).not.toContain('TOP-SECRET-VALUE');
+
+    // Issue 2b: License dates must appear as numeric millis in the create-audit row,
+    // not null (regression guard for the auditSnapshot Date-vs-Timestamp fix).
+    const createAuditSet = mocks.capturedTx.sets.find(
+      (s) => s.data?.entity === 'asset' && s.data?.action === 'create'
+    );
+    expect(createAuditSet).toBeDefined();
+    expect(createAuditSet.data.after.subscribedAt).toBe(new Date('2026-01-01').valueOf());
+    expect(createAuditSet.data.after.expiresAt).toBe(new Date('2027-01-01').valueOf());
+  });
+});
+
+describe('firestoreAssetRepository — auditSnapshot omits brand/model strings', () => {
+  it('audit before/after never contain free-text brand/model fields', async () => {
+    // Use the default device category (assignsInventoryCode defaults to true
+    // because the field is absent → wantsCode = true).
+    // mocks.category is already { inventoryCodePrefix: '400', isActive: true }
+    // from the outer beforeEach. No override needed.
+
+    await createAsset(
+      {
+        categoryId: 'device',
+        subtypeId: 'device_laptop',
+        statusId: 'warehouse',
+        assignedTo: { kind: 'warehouse', id: null },
+        branchId: 'b1',
+        condition: 'new',
+        brandId: 'hp',
+        modelId: 'hp_elitebook',
+      },
+      { uid: 'u1', role: 'super_admin' },
+      { category: { requiresMultilang: false } }
+    );
+
+    // buildAuditLog is mocked to pass args through, so the set data carries
+    // the raw args including `after`. Find the create audit set.
+    const auditSet = mocks.capturedTx.sets.find(
+      (s) => s.data?.entity === 'asset' && s.data?.action === 'create'
+    );
+    expect(auditSet).toBeDefined();
+    expect(auditSet.data.after).toBeDefined();
+    expect('brand' in auditSet.data.after).toBe(false);
+    expect('model' in auditSet.data.after).toBe(false);
+    expect(auditSet.data.after.brandId).toBe('hp');
+    expect(auditSet.data.after.modelId).toBe('hp_elitebook');
   });
 });

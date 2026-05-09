@@ -80,13 +80,13 @@ export const ASSIGNMENT_KIND_LIST = Object.freeze(
 /**
  * @typedef {Object} Asset
  * @property {string} assetId                                // mirrors doc id
- * @property {string} inventoryCode                          // ^[A-Z0-9]+/[0-9]+$, immutable
+ * @property {string|null} inventoryCode                     // ^[A-Z0-9]+/[0-9]+$ OR null when category.assignsInventoryCode === false. Immutable post-create.
  * @property {string} categoryId                             // FK -> categories, immutable
  * @property {string} subtypeId                              // FK -> asset_subtypes
  * @property {string} statusId                               // FK -> asset_statuses
- * @property {AssetName | string} name                       // Tier 3, multi-lang map OR single string
- * @property {string|null} brand                             // Tier 4, ASCII, optional
- * @property {string|null} model                             // Tier 4, ASCII, optional
+ * @property {AssetName | string | null} name                // Tier 3 multi-lang map | string | null when category.requiresMultilang === false
+ * @property {string|null} brandId                           // FK -> brands. null for Furniture.
+ * @property {string|null} modelId                           // FK -> models. null when brandId is null. If non-null, model.brandId must equal asset.brandId.
  * @property {string|null} serialNumber                      // Tier 4, ASCII, optional
  * @property {string|null} branchId                          // Location FK
  * @property {AssignedTo} assignedTo
@@ -96,6 +96,9 @@ export const ASSIGNMENT_KIND_LIST = Object.freeze(
  * @property {('new'|'used')} condition
  * @property {import('firebase/firestore').Timestamp|null} warrantyStart
  * @property {import('firebase/firestore').Timestamp|null} warrantyEnd
+ * @property {('personal'|'business'|'enterprise'|null)} licenseType   // license categories only
+ * @property {import('firebase/firestore').Timestamp|null} subscribedAt  // license categories only
+ * @property {import('firebase/firestore').Timestamp|null} expiresAt    // license categories only
  * @property {boolean} isActive
  * @property {import('firebase/firestore').Timestamp} createdAt
  * @property {string} createdBy
@@ -107,9 +110,9 @@ export const ASSIGNMENT_KIND_LIST = Object.freeze(
  * @typedef {Object} AssetInput
  * @property {string} categoryId
  * @property {string} [subtypeId]
- * @property {AssetName | string} [name]
- * @property {string|null} [brand]
- * @property {string|null} [model]
+ * @property {AssetName | string | null} [name]
+ * @property {string|null} [brandId]
+ * @property {string|null} [modelId]
  * @property {string|null} [serialNumber]
  * @property {string} [statusId]
  * @property {AssignedTo} [assignedTo]
@@ -120,6 +123,9 @@ export const ASSIGNMENT_KIND_LIST = Object.freeze(
  * @property {('new'|'used')} [condition]
  * @property {Date|null} [warrantyStart]
  * @property {Date|null} [warrantyEnd]
+ * @property {('personal'|'business'|'enterprise'|null)} [licenseType]
+ * @property {Date|null} [subscribedAt]
+ * @property {Date|null} [expiresAt]
  * @property {boolean} [isActive]
  */
 
@@ -173,8 +179,8 @@ export function emptyAssetInput() {
     categoryId: '',
     subtypeId: '',
     name: '',
-    brand: null,
-    model: null,
+    brandId: null,
+    modelId: null,
     serialNumber: null,
     statusId: DEFAULT_ASSET_STATUS_CODE,
     assignedTo: { kind: ASSIGNMENT_KINDS.WAREHOUSE, id: null },
@@ -185,6 +191,9 @@ export function emptyAssetInput() {
     condition: 'new',
     warrantyStart: null,
     warrantyEnd: null,
+    licenseType: null,
+    subscribedAt: null,
+    expiresAt: null,
     isActive: true,
   };
 }
@@ -205,18 +214,19 @@ export function sanitizeAssetInput(input, opts = {}) {
   const raw = input ?? {};
   const category = opts.category ?? null;
   const wantsMultilang = Boolean(category?.requiresMultilang);
+  const isLicense = (raw.categoryId ?? '').trim() === 'license';
 
   // ---- name ----
   let name;
-  if (wantsMultilang) {
+  if (category && category.requiresMultilang === false) {
+    name = null;
+  } else if (wantsMultilang) {
     const rawName = raw.name && typeof raw.name === 'object' ? raw.name : {};
     name = SUPPORTED_LOCALES.reduce(
       (acc, l) => ({ ...acc, [l]: trimOrEmpty(rawName[l]) }),
       {}
     );
   } else {
-    // Single-string name. If the form happened to hand us a locale map
-    // (e.g. category just got toggled), pick the first non-empty value.
     if (raw.name && typeof raw.name === 'object') {
       const m = raw.name;
       name = trimOrEmpty(m.ru) || trimOrEmpty(m.en) || trimOrEmpty(m.hy) || '';
@@ -233,14 +243,10 @@ export function sanitizeAssetInput(input, opts = {}) {
     ? rawAt.kind
     : ASSIGNMENT_KINDS.WAREHOUSE;
   let id = trimOrNull(rawAt.id);
-  if (kind === ASSIGNMENT_KINDS.WAREHOUSE) {
-    id = null;
-  }
+  if (kind === ASSIGNMENT_KINDS.WAREHOUSE) id = null;
   const assignedTo = { kind, id };
 
   // ---- branchId ----
-  // - warehouse / branch modes need a branchId (which warehouse / which branch);
-  // - employee / department / asset modes don't (the asset is "with someone/something").
   let branchId = trimOrNull(raw.branchId);
   if (
     kind === ASSIGNMENT_KINDS.EMPLOYEE ||
@@ -259,7 +265,7 @@ export function sanitizeAssetInput(input, opts = {}) {
     if (Number.isFinite(parsed)) purchasePrice = parsed;
   }
 
-  // ---- dates: purchaseDate, warrantyStart, warrantyEnd ----
+  // ---- dates ----
   function parseDate(v) {
     if (v instanceof Date && !Number.isNaN(v.valueOf())) return v;
     if (isPlainString(v) && v.trim().length > 0) {
@@ -271,9 +277,6 @@ export function sanitizeAssetInput(input, opts = {}) {
   const purchaseDate = parseDate(raw.purchaseDate);
 
   // ---- condition + warranty ----
-  // Sanitizer coerces unknown / blank condition to 'new' (the default).
-  // 'used' is the only non-default. Warranty fields are forced null when
-  // condition is 'used' so the persisted shape is consistent.
   const condition = raw.condition === 'used' ? 'used' : 'new';
   let warrantyStart = parseDate(raw.warrantyStart);
   let warrantyEnd = parseDate(raw.warrantyEnd);
@@ -282,12 +285,22 @@ export function sanitizeAssetInput(input, opts = {}) {
     warrantyEnd = null;
   }
 
+  // ---- license ----
+  const licenseType =
+    raw.licenseType === 'personal' ||
+    raw.licenseType === 'business' ||
+    raw.licenseType === 'enterprise'
+      ? raw.licenseType
+      : null;
+  const subscribedAt = parseDate(raw.subscribedAt);
+  const expiresAt = parseDate(raw.expiresAt);
+
   return {
     categoryId: trimOrEmpty(raw.categoryId),
     subtypeId: trimOrEmpty(raw.subtypeId),
     name,
-    brand: trimOrNull(raw.brand),
-    model: trimOrNull(raw.model),
+    brandId: trimOrNull(raw.brandId),
+    modelId: trimOrNull(raw.modelId),
     serialNumber: trimOrNull(raw.serialNumber),
     statusId: trimOrEmpty(raw.statusId) || DEFAULT_ASSET_STATUS_CODE,
     assignedTo,
@@ -298,8 +311,26 @@ export function sanitizeAssetInput(input, opts = {}) {
     condition,
     warrantyStart,
     warrantyEnd,
+    licenseType: isLicense ? licenseType : null,
+    subscribedAt: isLicense ? subscribedAt : null,
+    expiresAt: isLicense ? expiresAt : null,
     isActive: raw.isActive === undefined ? true : Boolean(raw.isActive),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Date helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns midnight of today in UTC as milliseconds.
+ * Used by validateAssetInput to gate warrantyStart on create.
+ * Exported so callers (and tests) can stub it.
+ * @returns {number}
+ */
+export function startOfTodayUTC() {
+  const now = new Date();
+  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
 }
 
 /**
@@ -312,6 +343,7 @@ export function sanitizeAssetInput(input, opts = {}) {
  * @param {{
  *   category?: { requiresMultilang: boolean } | null,
  *   subtype?: { attachableTo: string[] } | null,
+ *   isEdit?: boolean,
  * }} [opts]
  * @returns {Record<string, string>}
  */
@@ -319,30 +351,34 @@ export function validateAssetInput(input, opts = {}) {
   const errors = {};
   const category = opts.category ?? null;
   const subtype = opts.subtype ?? null;
+  const isEdit = Boolean(opts.isEdit);
   const wantsMultilang = Boolean(category?.requiresMultilang);
   const s = sanitizeAssetInput(input, opts);
+  const isLicense = s.categoryId === 'license';
 
   // categoryId required.
-  if (!s.categoryId) {
-    errors.categoryId = 'errorRequired';
-  }
+  if (!s.categoryId) errors.categoryId = 'errorRequired';
 
   // subtypeId required.
-  if (!s.subtypeId) {
-    errors.subtypeId = 'errorRequired';
-  }
+  if (!s.subtypeId) errors.subtypeId = 'errorRequired';
 
-  // name validation. Only meaningful when a category is picked (otherwise
-  // we don't yet know which shape to demand).
+  // name validation. Only meaningful when a category is picked.
   if (s.categoryId) {
     if (wantsMultilang) {
       const map = /** @type {AssetName} */ (s.name);
-      const filled = SUPPORTED_LOCALES.filter((l) => map[l] && map[l].length > 0);
-      if (filled.length === 0) {
+      if (!map || typeof map !== 'object') {
         errors.name = 'errorRequired';
-      } else if (filled.length < SUPPORTED_LOCALES.length) {
-        errors.name = 'errorNameAllLocales';
+      } else {
+        const filled = SUPPORTED_LOCALES.filter(
+          (l) => map[l] && map[l].length > 0
+        );
+        if (filled.length === 0) errors.name = 'errorRequired';
+        else if (filled.length < SUPPORTED_LOCALES.length)
+          errors.name = 'errorNameAllLocales';
       }
+    } else if (category && category.requiresMultilang === false) {
+      // Name MUST be null for non-multilang categories.
+      if (s.name !== null) errors.name = 'errorNameMustBeNull';
     } else {
       if (!s.name || (typeof s.name === 'string' && s.name.length === 0)) {
         errors.name = 'errorRequired';
@@ -350,14 +386,15 @@ export function validateAssetInput(input, opts = {}) {
     }
   }
 
-  // brand / model / serialNumber must be ASCII when present.
-  if (s.brand && NON_ASCII_REGEX.test(s.brand)) errors.brand = 'errorAsciiOnly';
-  if (s.model && NON_ASCII_REGEX.test(s.model)) errors.model = 'errorAsciiOnly';
+  // brandId / modelId pair: if modelId is set, brandId must be set.
+  if (s.modelId && !s.brandId) errors.brandId = 'errorRequired';
+
+  // serialNumber must be ASCII when present.
   if (s.serialNumber && NON_ASCII_REGEX.test(s.serialNumber)) {
     errors.serialNumber = 'errorAsciiOnly';
   }
 
-  // assignedTo validation: shape + per-sub-type allow-list.
+  // assignedTo validation.
   const at = s.assignedTo;
   if (!ASSIGNMENT_KIND_LIST.includes(at?.kind)) {
     errors.assignedTo = 'errorRequired';
@@ -369,7 +406,6 @@ export function validateAssetInput(input, opts = {}) {
     subtype.attachableTo.length > 0 &&
     !subtype.attachableTo.includes(at.kind)
   ) {
-    // The chosen sub-type does not list this holder kind as allowed.
     errors.assignedTo = 'errorAssignedKindNotAllowed';
   }
 
@@ -381,22 +417,62 @@ export function validateAssetInput(input, opts = {}) {
     if (!s.branchId) errors.branchId = 'errorRequired';
   }
 
-  // statusId must be non-empty (defaults to 'warehouse', so this is
-  // really a defensive guard).
   if (!s.statusId) errors.statusId = 'errorRequired';
 
-  // condition must be a known string. The sanitizer normalizes to 'new'
-  // by default, so this is a defensive guard for callers that bypass the
-  // sanitizer.
+  // Fix 1: purchasePrice must be >= 0 (null is allowed — means "not recorded").
+  if (s.purchasePrice != null && s.purchasePrice < 0) {
+    errors.purchasePrice = 'errorNegativePrice';
+  }
+
   if (s.condition !== 'new' && s.condition !== 'used') {
     errors.condition = 'errorRequired';
   }
 
-  // warranty: end >= start when both provided. Only meaningful for new
-  // assets (used assets have warranty fields cleared by the sanitizer).
   if (s.condition === 'new' && s.warrantyStart && s.warrantyEnd) {
     if (s.warrantyEnd.valueOf() < s.warrantyStart.valueOf()) {
       errors.warrantyEnd = 'errorWarrantyEndBeforeStart';
+    }
+  }
+
+  // Fix 2: warrantyStart cannot be in the past on CREATE.
+  // On edit, the calendar is restricted client-side but existing past dates stay valid.
+  if (!isEdit && s.warrantyStart instanceof Date) {
+    if (s.warrantyStart.valueOf() < startOfTodayUTC()) {
+      errors.warrantyStart = 'errorWarrantyStartPast';
+    }
+  }
+
+  // License-specific holder constraint.
+  // A license may only be assigned to a device (asset) or an employee.
+  // Assigning it to a warehouse, branch, or department is a domain error.
+  // Only fires when no prior assignedTo error was set (e.g. errorRequired).
+  if (isLicense && !errors.assignedTo) {
+    const at = s.assignedTo;
+    if (
+      at?.kind !== undefined &&
+      !['asset', 'employee'].includes(at.kind)
+    ) {
+      errors.assignedTo = 'errorLicenseInvalidHolder';
+    }
+  }
+
+  // License-specific fields.
+  if (isLicense) {
+    if (!s.licenseType) errors.licenseType = 'errorRequired';
+    if (!s.subscribedAt) errors.subscribedAt = 'errorRequired';
+    if (!s.expiresAt) errors.expiresAt = 'errorRequired';
+    if (
+      s.subscribedAt &&
+      s.expiresAt &&
+      s.expiresAt.valueOf() <= s.subscribedAt.valueOf()
+    ) {
+      errors.expiresAt = 'errorExpiresBeforeSubscribed';
+    }
+  } else {
+    // Non-license: license fields must be null. Sanitizer already enforces;
+    // this is a defensive guard for callers that bypass the sanitizer.
+    if (s.licenseType || s.subscribedAt || s.expiresAt) {
+      errors.licenseType = 'errorLicenseFieldsOnLicenseOnly';
     }
   }
 
@@ -471,5 +547,121 @@ export class AssetCategoryInactiveError extends Error {
     this.name = 'AssetCategoryInactiveError';
     this.code = 'asset/category-inactive';
     this.categoryId = categoryId;
+  }
+}
+
+export class AssetStatusFinalError extends Error {
+  constructor(statusId) {
+    super(`Asset status '${statusId}' is final — mutation rejected (errorStatusFinal)`);
+    this.name = 'AssetStatusFinalError';
+    this.code = 'asset/status-final';
+    this.i18nKey = 'errorStatusFinal';
+    this.statusId = statusId;
+  }
+}
+
+export class AssignmentCycleError extends Error {
+  constructor(hostAssetId, targetAssetId) {
+    super(`Assignment cycle detected: ${hostAssetId} -> ... -> ${targetAssetId} (errorAssignmentCycle)`);
+    this.name = 'AssignmentCycleError';
+    this.code = 'asset/assignment-cycle';
+    this.i18nKey = 'errorAssignmentCycle';
+    this.hostAssetId = hostAssetId;
+    this.targetAssetId = targetAssetId;
+  }
+}
+
+export class AssignmentSelfError extends Error {
+  constructor(assetId) {
+    super(`Asset cannot be assigned to itself: ${assetId} (errorAssignmentSelf)`);
+    this.name = 'AssignmentSelfError';
+    this.code = 'asset/assignment-self';
+    this.i18nKey = 'errorAssignmentSelf';
+    this.assetId = assetId;
+  }
+}
+
+export class LicenseKeyOnNonLicenseError extends Error {
+  constructor(assetId, categoryId) {
+    super(`Asset ${assetId} is not a license asset (categoryId='${categoryId}') — errorLicenseKeyOnNonLicense`);
+    this.name = 'LicenseKeyOnNonLicenseError';
+    this.code = 'asset/license-key-on-non-license';
+    this.i18nKey = 'errorLicenseKeyOnNonLicense';
+    this.assetId = assetId;
+    this.categoryId = categoryId;
+  }
+}
+
+export class LicenseKeyMissingError extends Error {
+  constructor(assetId) {
+    super(`No license key found on asset ${assetId}`);
+    this.name = 'LicenseKeyMissingError';
+    this.code = 'asset/license-key-missing';
+    this.assetId = assetId;
+  }
+}
+
+export class LicenseKeyTargetOccupiedError extends Error {
+  constructor(assetId) {
+    super(`Target asset ${assetId} already has a license key — errorLicenseKeyTargetOccupied`);
+    this.name = 'LicenseKeyTargetOccupiedError';
+    this.code = 'asset/license-key-target-occupied';
+    this.i18nKey = 'errorLicenseKeyTargetOccupied';
+    this.assetId = assetId;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Fix 4 — Assignment cycle detection
+// ---------------------------------------------------------------------------
+
+/**
+ * Walk the "assignedTo → asset" chain starting from targetAssetId and
+ * ensure it never circles back to hostAssetId.
+ *
+ * Throws `AssignmentSelfError` immediately when `hostAssetId === targetAssetId`.
+ * Throws `AssignmentCycleError` when a revisit is detected or when the walk
+ * exceeds `maxHops` hops (treats runaway chains as potential cycles).
+ *
+ * @param {{
+ *   hostAssetId: string,
+ *   targetAssetId: string,
+ *   lookup: (assetId: string) => Promise<{ assignedTo?: { kind: string, id: string | null } } | null>,
+ *   maxHops?: number,
+ * }} params
+ * @returns {Promise<void>}
+ */
+export async function assertNoAssignmentCycle({ hostAssetId, targetAssetId, lookup, maxHops = 16 }) {
+  if (hostAssetId === targetAssetId) {
+    throw new AssignmentSelfError(hostAssetId);
+  }
+
+  const visited = new Set([hostAssetId]);
+  let current = targetAssetId;
+  let hops = 0;
+
+  while (current != null && hops < maxHops) {
+    if (visited.has(current)) {
+      throw new AssignmentCycleError(hostAssetId, current);
+    }
+    visited.add(current);
+    hops += 1;
+
+    const asset = await lookup(current);
+    if (!asset) break;
+
+    const at = asset.assignedTo;
+    if (!at || at.kind !== 'asset' || !at.id) break;
+
+    current = at.id;
+  }
+
+  // If we reached the maxHops limit and there is still a next node, treat it
+  // as a cycle to prevent runaway traversal.
+  if (hops >= maxHops && current != null) {
+    const asset = await lookup(current);
+    if (asset?.assignedTo?.kind === 'asset' && asset.assignedTo.id) {
+      throw new AssignmentCycleError(hostAssetId, current);
+    }
   }
 }

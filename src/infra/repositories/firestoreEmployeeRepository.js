@@ -15,6 +15,7 @@
 import {
   collection,
   doc,
+  getDoc,
   onSnapshot,
   orderBy,
   query,
@@ -128,6 +129,62 @@ export function subscribeEmployee(id, onData, onError) {
       if (onError) onError(err);
     }
   );
+}
+
+/**
+ * Subscribe to the employee whose email matches `email`.
+ * Resolves via the email_index sentinel (one `getDoc`) then subscribes
+ * to the resolved employee doc. Returns null when not found.
+ *
+ * The returned unsubscribe function cancels the inner snapshot listener.
+ *
+ * @param {string} email  Raw gmail (will be normalized via emailKey).
+ * @param {(employee: import('@/domain/employees.js').Employee | null) => void} onData
+ * @param {(error: Error) => void} [onError]
+ * @returns {() => void} unsubscribe
+ */
+export function subscribeEmployeeByEmail(email, onData, onError) {
+  const key = emailKey(email);
+  if (!key) {
+    // Synchronously emit null and return a no-op.
+    onData(null);
+    return () => {};
+  }
+
+  let innerUnsub = null;
+  let cancelled = false;
+
+  const idxRef = emailIndexDoc(key);
+  getDoc(idxRef)
+    .then((idxSnap) => {
+      if (cancelled) return;
+      if (!idxSnap.exists()) {
+        onData(null);
+        return;
+      }
+      const employeeId = idxSnap.data()?.employeeId;
+      if (!employeeId) {
+        onData(null);
+        return;
+      }
+      innerUnsub = onSnapshot(
+        employeeDoc(employeeId),
+        (snap) => {
+          if (!cancelled) onData(snapshotToEmployee(snap));
+        },
+        (err) => {
+          if (!cancelled && onError) onError(err);
+        }
+      );
+    })
+    .catch((err) => {
+      if (!cancelled && onError) onError(err);
+    });
+
+  return () => {
+    cancelled = true;
+    if (innerUnsub) innerUnsub();
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -348,6 +405,7 @@ export async function setEmployeeActive(id, isActive, before, actor, opts = {}) 
 export const firestoreEmployeeRepository = Object.freeze({
   list: subscribeEmployees,
   get: subscribeEmployee,
+  getByEmail: subscribeEmployeeByEmail,
   create: createEmployee,
   update: updateEmployee,
   setActive: setEmployeeActive,

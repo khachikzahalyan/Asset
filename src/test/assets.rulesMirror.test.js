@@ -963,3 +963,233 @@ describe('rules mirror — extended assignedTo + new asset fields', () => {
     ).toBe(false);
   });
 });
+
+describe('assets rules mirror — brandId/modelId replace brand/model', () => {
+  function isAssetShapeValid(data) {
+    if ('brand' in data) return false;
+    if ('model' in data) return false;
+    if (!(data.brandId === null || typeof data.brandId === 'string')) return false;
+    if (!(data.modelId === null || typeof data.modelId === 'string')) return false;
+    return true;
+  }
+
+  it('rejects assets with legacy brand/model strings', () => {
+    expect(isAssetShapeValid({ brand: 'HP' })).toBe(false);
+    expect(isAssetShapeValid({ model: 'EliteBook' })).toBe(false);
+  });
+
+  it('accepts assets with brandId/modelId or null', () => {
+    expect(isAssetShapeValid({ brandId: 'hp', modelId: 'hp_elitebook' })).toBe(true);
+    expect(isAssetShapeValid({ brandId: null, modelId: null })).toBe(true);
+  });
+});
+
+describe('assets rules mirror — inventoryCode is nullable', () => {
+  function isInventoryCodeValid(value) {
+    if (value === null) return true;
+    return typeof value === 'string' && /^[A-Z0-9]+\/[0-9]+$/.test(value);
+  }
+
+  it('accepts null', () => {
+    expect(isInventoryCodeValid(null)).toBe(true);
+  });
+
+  it('accepts valid PREFIX/NUMBER strings', () => {
+    expect(isInventoryCodeValid('450/1')).toBe(true);
+  });
+
+  it('rejects invalid strings', () => {
+    expect(isInventoryCodeValid('lowercase/1')).toBe(false);
+    expect(isInventoryCodeValid('450')).toBe(false);
+  });
+});
+
+describe('assets rules mirror — keys().hasOnly enforcement', () => {
+  const ALLOWED_KEYS = [
+    'assignedTo',
+    'brandId',
+    'branchId',
+    'categoryId',
+    'condition',
+    'createdAt',
+    'createdBy',
+    'expiresAt',
+    'inventoryCode',
+    'isActive',
+    'licenseType',
+    'modelId',
+    'name',
+    'notes',
+    'purchaseDate',
+    'purchasePrice',
+    'serialNumber',
+    'statusId',
+    'subscribedAt',
+    'subtypeId',
+    'updatedAt',
+    'updatedBy',
+    'warrantyEnd',
+    'warrantyStart',
+  ];
+
+  function isAssetKeySetValid(data) {
+    return Object.keys(data).every((k) => ALLOWED_KEYS.includes(k));
+  }
+
+  it('rejects unknown top-level keys on create', () => {
+    expect(isAssetKeySetValid({ categoryId: 'device', someInjected: 1 })).toBe(false);
+  });
+
+  it('rejects legacy brand/model strings on create', () => {
+    expect(isAssetKeySetValid({ categoryId: 'device', brand: 'HP' })).toBe(false);
+    expect(isAssetKeySetValid({ categoryId: 'device', model: 'EliteBook' })).toBe(false);
+  });
+
+  it('accepts the canonical key set', () => {
+    const sample = Object.fromEntries(ALLOWED_KEYS.map((k) => [k, null]));
+    expect(isAssetKeySetValid(sample)).toBe(true);
+  });
+});
+
+describe('assets rules mirror — affectedKeys allowlist excludes immutable fields', () => {
+  // This mirrors the tightened affectedKeys().hasOnly([...]) on the update path.
+  // Immutable fields (categoryId, inventoryCode, createdAt, createdBy) are pinned by
+  // equality validators in firestore.rules, so their values never differ between
+  // request.resource.data and resource.data on a legitimate update. Including them
+  // in the allowlist is dead defense; they are deliberately absent.
+  const MUTABLE_KEYS = [
+    'assignedTo',
+    'brandId',
+    'branchId',
+    'condition',
+    'expiresAt',
+    'isActive',
+    'licenseType',
+    'modelId',
+    'name',
+    'notes',
+    'purchaseDate',
+    'purchasePrice',
+    'serialNumber',
+    'statusId',
+    'subscribedAt',
+    'subtypeId',
+    'updatedAt',
+    'updatedBy',
+    'warrantyEnd',
+    'warrantyStart',
+  ];
+
+  // Mirrors affectedKeys().hasOnly(MUTABLE_KEYS): every key that changed must be in
+  // MUTABLE_KEYS. In real Firestore, affectedKeys() only contains keys whose values
+  // actually differ, so an immutable field that keeps the same value produces no
+  // entry in affectedKeys() and the check passes. The failing cases below mutate an
+  // immutable field (value changes), which would surface that key in affectedKeys().
+  function affectedKeysAllowed(before, after) {
+    const changed = Object.keys(after).filter((k) => after[k] !== before[k]);
+    return changed.every((k) => MUTABLE_KEYS.includes(k));
+  }
+
+  it('immutable field categoryId is NOT in MUTABLE_KEYS', () => {
+    expect(MUTABLE_KEYS.includes('categoryId')).toBe(false);
+  });
+
+  it('immutable field inventoryCode is NOT in MUTABLE_KEYS', () => {
+    expect(MUTABLE_KEYS.includes('inventoryCode')).toBe(false);
+  });
+
+  it('immutable field createdAt is NOT in MUTABLE_KEYS', () => {
+    expect(MUTABLE_KEYS.includes('createdAt')).toBe(false);
+  });
+
+  it('immutable field createdBy is NOT in MUTABLE_KEYS', () => {
+    expect(MUTABLE_KEYS.includes('createdBy')).toBe(false);
+  });
+
+  it('categoryId mutation is rejected by the affectedKeys allowlist', () => {
+    const before = existingAssetDoc('super_uid');
+    const after = { ...before, categoryId: 'cat_other', updatedBy: 'super_uid', updatedAt: REQ_TIME };
+    expect(affectedKeysAllowed(before, after)).toBe(false);
+  });
+
+  it('inventoryCode mutation is rejected by the affectedKeys allowlist', () => {
+    const before = existingAssetDoc('super_uid');
+    const after = { ...before, inventoryCode: '999/1', updatedBy: 'super_uid', updatedAt: REQ_TIME };
+    expect(affectedKeysAllowed(before, after)).toBe(false);
+  });
+
+  it('createdAt mutation is rejected by the affectedKeys allowlist', () => {
+    const before = existingAssetDoc('super_uid');
+    const after = { ...before, createdAt: 'TAMPERED', updatedBy: 'super_uid', updatedAt: REQ_TIME };
+    expect(affectedKeysAllowed(before, after)).toBe(false);
+  });
+
+  it('createdBy mutation is rejected by the affectedKeys allowlist', () => {
+    const before = existingAssetDoc('super_uid');
+    const after = { ...before, createdBy: 'attacker_uid', updatedBy: 'super_uid', updatedAt: REQ_TIME };
+    expect(affectedKeysAllowed(before, after)).toBe(false);
+  });
+
+  it('pure name mutation is accepted by the affectedKeys allowlist', () => {
+    const before = existingAssetDoc('super_uid');
+    const after = { ...before, name: 'New Name', updatedBy: 'super_uid', updatedAt: REQ_TIME };
+    expect(affectedKeysAllowed(before, after)).toBe(true);
+  });
+});
+
+describe('assets rules mirror — license-conditional fields', () => {
+  function isLicenseShapeValid(data) {
+    if (data.categoryId !== 'license') {
+      return (
+        data.licenseType == null &&
+        data.subscribedAt == null &&
+        data.expiresAt == null
+      );
+    }
+    if (!['personal', 'business', 'enterprise'].includes(data.licenseType))
+      return false;
+    if (typeof data.subscribedAt !== 'object' || data.subscribedAt === null)
+      return false;
+    if (typeof data.expiresAt !== 'object' || data.expiresAt === null)
+      return false;
+    return true;
+  }
+
+  it('non-license assets must have null license fields', () => {
+    expect(
+      isLicenseShapeValid({
+        categoryId: 'device',
+        licenseType: null,
+        subscribedAt: null,
+        expiresAt: null,
+      })
+    ).toBe(true);
+    expect(
+      isLicenseShapeValid({
+        categoryId: 'device',
+        licenseType: 'business',
+        subscribedAt: null,
+        expiresAt: null,
+      })
+    ).toBe(false);
+  });
+
+  it('license assets require all three fields', () => {
+    expect(
+      isLicenseShapeValid({
+        categoryId: 'license',
+        licenseType: 'business',
+        subscribedAt: { __ts: 't1' },
+        expiresAt: { __ts: 't2' },
+      })
+    ).toBe(true);
+    expect(
+      isLicenseShapeValid({
+        categoryId: 'license',
+        licenseType: 'invalid',
+        subscribedAt: { __ts: 't1' },
+        expiresAt: { __ts: 't2' },
+      })
+    ).toBe(false);
+  });
+});

@@ -49,6 +49,10 @@ import {
   AssignmentConflictError,
   EVENT_TYPES,
 } from '@/domain/assignmentEvents.js';
+import {
+  assertNoAssignmentCycle,
+  AssetStatusFinalError,
+} from '@/domain/assets.js';
 import { buildAuditLog, newAuditLogRef } from '@/lib/audit/auditHelper.js';
 
 // ---------------------------------------------------------------------------
@@ -57,6 +61,7 @@ import { buildAuditLog, newAuditLogRef } from '@/lib/audit/auditHelper.js';
 
 const ASSETS = 'assets';
 const ASSIGNMENT_EVENTS = 'assignment_events';
+const ASSET_STATUSES = 'asset_statuses';
 
 function eventsCollection() {
   return collection(db, ASSIGNMENT_EVENTS);
@@ -64,6 +69,10 @@ function eventsCollection() {
 
 function assetDoc(id) {
   return doc(db, ASSETS, id);
+}
+
+function assetStatusDoc(id) {
+  return doc(db, ASSET_STATUSES, id);
 }
 
 // ---------------------------------------------------------------------------
@@ -163,6 +172,27 @@ export async function createAssignmentEvent(input, actor) {
 
     if (!assignedEqual(liveAssigned, sanitized.fromAssignment)) {
       throw new AssignmentConflictError(sanitized.fromAssignment, liveAssigned);
+    }
+
+    // Fix 5: reject if the current asset status is final.
+    const currentStatusId = before.statusId ?? null;
+    if (currentStatusId) {
+      const statusSnap = await tx.get(assetStatusDoc(currentStatusId));
+      if (statusSnap.exists() && statusSnap.data()?.isFinal === true) {
+        throw new AssetStatusFinalError(currentStatusId);
+      }
+    }
+
+    // Fix 4: when assigning to another asset, check for cycles.
+    if (sanitized.toAssignment?.kind === 'asset' && sanitized.toAssignment.id) {
+      await assertNoAssignmentCycle({
+        hostAssetId: sanitized.assetId,
+        targetAssetId: sanitized.toAssignment.id,
+        lookup: async (aid) => {
+          const snap = await tx.get(assetDoc(aid));
+          return snap.exists() ? snap.data() : null;
+        },
+      });
     }
 
     const nextStatusId = deriveStatusAfterEvent(eventType, before.statusId ?? null);
