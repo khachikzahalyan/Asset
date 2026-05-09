@@ -13,6 +13,9 @@ export const NAMESPACES = Object.freeze({
   ME: 'me',
   SETTINGS: 'settings',
   USERS: 'users',
+  BRANDS: 'brands',
+  MODELS: 'models',
+  LICENSES: 'licenses',
 });
 
 export const NAMESPACE_LIST = Object.values(NAMESPACES);
