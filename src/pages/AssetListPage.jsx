@@ -28,11 +28,15 @@ import { useCategories } from '@/hooks/useCategories.js';
 import { useAssetStatuses } from '@/hooks/useAssetStatuses.js';
 import { useBranches } from '@/hooks/useBranches.js';
 import { useEmployees } from '@/hooks/useEmployees.js';
+import { useBrands } from '@/hooks/useBrands.js';
+import { useModels } from '@/hooks/useModels.js';
+import { useAssetSubtypes } from '@/hooks/useAssetSubtypes.js';
 import { firestoreAssetRepository } from '@/infra/repositories/firestoreAssetRepository.js';
 import { ROLES } from '@/domain/roles.js';
 import { ASSIGNMENT_KINDS, nameForDisplay } from '@/domain/assets.js';
 import { formatEmployeeName } from '@/domain/employees.js';
 import { localize } from '@/lib/localize.js';
+import { formatAssetTitle } from '@/lib/asset/formatAssetTitle.js';
 import { assetDetailPath } from '@/config/routes.js';
 
 /**
@@ -50,6 +54,9 @@ export default function AssetListPage() {
   const { data: statuses } = useAssetStatuses();
   const { data: branches } = useBranches();
   const { data: employees } = useEmployees();
+  const { data: brands } = useBrands();
+  const { data: models } = useModels();
+  const { all: allSubtypes } = useAssetSubtypes();
 
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
@@ -81,6 +88,21 @@ export default function AssetListPage() {
     for (const e of employees) m.set(e.employeeId, e);
     return m;
   }, [employees]);
+  const brandsById = useMemo(() => {
+    const m = new Map();
+    for (const b of brands) m.set(b.brandId, b);
+    return m;
+  }, [brands]);
+  const modelsById = useMemo(() => {
+    const m = new Map();
+    for (const md of models) m.set(md.modelId, md);
+    return m;
+  }, [models]);
+  const subtypesById = useMemo(() => {
+    const m = new Map();
+    for (const s of allSubtypes) m.set(s.subtypeId, s);
+    return m;
+  }, [allSubtypes]);
 
   const rows = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -297,7 +319,15 @@ export default function AssetListPage() {
                       to={assetDetailPath(a.assetId)}
                       className="font-medium text-foreground underline-offset-4 hover:underline"
                     >
-                      {nameForDisplay(a, lng) || '—'}
+                      {formatAssetTitle(
+                        a,
+                        {
+                          brand: brandsById.get(a.brandId),
+                          model: modelsById.get(a.modelId),
+                          subtype: subtypesById.get(a.subtypeId),
+                        },
+                        lng
+                      ) || nameForDisplay(a, lng) || '—'}
                     </Link>
                   </TableCell>
                   <TableCell className="text-muted-foreground">

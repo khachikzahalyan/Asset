@@ -23,12 +23,17 @@ import { useAssetStatuses } from '@/hooks/useAssetStatuses.js';
 import { useAssetSubtypes } from '@/hooks/useAssetSubtypes.js';
 import { useBranches } from '@/hooks/useBranches.js';
 import { useEmployees } from '@/hooks/useEmployees.js';
+import { useBrands } from '@/hooks/useBrands.js';
+import { useModels } from '@/hooks/useModels.js';
 import { firestoreAssetRepository } from '@/infra/repositories/firestoreAssetRepository.js';
 import { firestoreAssignmentEventRepository } from '@/infra/repositories/firestoreAssignmentEventRepository.js';
 import { ROLES } from '@/domain/roles.js';
 import { ASSIGNMENT_KINDS, nameForDisplay } from '@/domain/assets.js';
 import { formatEmployeeName } from '@/domain/employees.js';
 import { localize } from '@/lib/localize.js';
+import { formatAssetTitle } from '@/lib/asset/formatAssetTitle.js';
+import { LicenseExpiryBadge } from '@/components/features/assets/LicenseExpiryBadge.jsx';
+import { LicenseKeyDialog } from '@/components/features/assets/LicenseKeyDialog.jsx';
 import { ROUTES } from '@/config/routes.js';
 
 /**
@@ -44,6 +49,7 @@ import { ROUTES } from '@/config/routes.js';
 export default function AssetDetailPage() {
   const { assetId } = useParams();
   const { t, i18n } = useTranslation(['assets', 'common']);
+  const { t: tLicenses } = useTranslation('licenses');
   const { user, role } = useAuth();
   const { data: asset, loading, error } = useAsset(assetId);
   const { data: categories } = useCategories();
@@ -52,14 +58,18 @@ export default function AssetDetailPage() {
   const { data: employees } = useEmployees();
   const { data: allAssets } = useAssets();
   const { all: allSubtypes } = useAssetSubtypes();
+  const { data: brands } = useBrands();
+  const { data: models } = useModels();
 
   const [editOpen, setEditOpen] = useState(false);
   const [statusActing, setStatusActing] = useState(false);
   const [statusError, setStatusError] = useState(null);
+  const [keyDialogOpen, setKeyDialogOpen] = useState(false);
   /** @type {[null|'issue'|'return'|'transfer', any]} */
   const [assignMode, setAssignMode] = useState(null);
 
   const canEdit = role === ROLES.SUPER_ADMIN || role === ROLES.ASSET_ADMIN;
+  const canManageKey = role === ROLES.SUPER_ADMIN || role === ROLES.TECH_ADMIN;
   const lng = i18n.resolvedLanguage ?? 'ru';
 
   const category = useMemo(
@@ -90,6 +100,21 @@ export default function AssetDetailPage() {
     for (const a of allAssets || []) m.set(a.assetId, a);
     return m;
   }, [allAssets]);
+  const brandsById = useMemo(() => {
+    const m = new Map();
+    for (const b of brands) m.set(b.brandId, b);
+    return m;
+  }, [brands]);
+  const modelsById = useMemo(() => {
+    const m = new Map();
+    for (const md of models) m.set(md.modelId, md);
+    return m;
+  }, [models]);
+  const subtypesById = useMemo(() => {
+    const m = new Map();
+    for (const s of allSubtypes) m.set(s.subtypeId, s);
+    return m;
+  }, [allSubtypes]);
 
   // Status options visible in the inline switcher: filter by `isActive`,
   // and constrain by Куда (assignable vs warehouse-side) so the dropdown
@@ -206,7 +231,17 @@ export default function AssetDetailPage() {
   return (
     <>
       <PageHeader
-        title={nameForDisplay(asset, lng) || asset.inventoryCode}
+        title={
+          formatAssetTitle(
+            asset,
+            {
+              brand: brandsById.get(asset.brandId),
+              model: modelsById.get(asset.modelId),
+              subtype: subtypesById.get(asset.subtypeId),
+            },
+            lng
+          ) || nameForDisplay(asset, lng) || asset.inventoryCode
+        }
         description={asset.inventoryCode}
         actions={
           <div className="flex flex-wrap items-center gap-2">
@@ -268,6 +303,20 @@ export default function AssetDetailPage() {
           </CardHeader>
           <CardContent className="space-y-4 text-sm">
             <WarrantyBanner asset={asset} t={t} locale={lng} />
+            {asset.categoryId === 'license' ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <LicenseExpiryBadge expiresAt={asset.expiresAt} />
+                {canManageKey ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setKeyDialogOpen(true)}
+                  >
+                    {tLicenses('manageKey')}
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
             <Field label={t('inventoryCode')}>
               <span className="font-mono">{asset.inventoryCode}</span>
             </Field>
@@ -392,6 +441,14 @@ export default function AssetDetailPage() {
           mode={assignMode}
           onSubmit={handleAssignmentSubmit}
           actor={{ uid: user?.uid ?? '', role }}
+        />
+      ) : null}
+
+      {asset.categoryId === 'license' && canManageKey ? (
+        <LicenseKeyDialog
+          assetId={asset.assetId}
+          open={keyDialogOpen}
+          onOpenChange={setKeyDialogOpen}
         />
       ) : null}
     </>
